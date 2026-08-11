@@ -11,12 +11,43 @@ export type WorktreeCreateTimingRecorder = {
   finish(): WorktreeCreateTiming
 }
 
+export type WorktreeCreateTimingTarget = 'local' | 'wsl' | 'direct-ssh'
+
 function defaultClock(): number {
   return performance.now()
 }
 
 function clampDuration(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0
+}
+
+function formatDuration(value: number): string {
+  return `${Math.round(clampDuration(value))}ms`
+}
+
+export function formatWorktreeCreateTiming(
+  target: WorktreeCreateTimingTarget,
+  timing: WorktreeCreateTiming
+): string {
+  const phases = [...timing.phases]
+    .sort((left, right) => left.startedAtMs - right.startedAtMs)
+    .map(
+      (phase) =>
+        `${phase.phase}=${formatDuration(phase.durationMs)}@+${formatDuration(phase.startedAtMs)}`
+    )
+  return [
+    '[worktree-create-timing]',
+    `target=${target}`,
+    `total=${formatDuration(timing.totalDurationMs)}`,
+    ...phases
+  ].join(' ')
+}
+
+export function logWorktreeCreateTiming(
+  target: WorktreeCreateTimingTarget,
+  timing: WorktreeCreateTiming
+): void {
+  console.info(formatWorktreeCreateTiming(target, timing))
 }
 
 function createPhase(

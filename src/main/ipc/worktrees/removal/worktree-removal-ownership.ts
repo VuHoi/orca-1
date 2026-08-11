@@ -2,7 +2,7 @@ import type { OrcaRuntimeService } from '../../../runtime/orca-runtime'
 import { getSshPtyProvider, getLocalPtyProvider, clearProviderPtyState } from '../../pty'
 import { killAllProcessesForWorktree } from '../../../runtime/worktree-teardown'
 import type { Store } from '../../../persistence/loading-store/store'
-import { getRepoExecutionHostId } from '../../../../shared/execution-host'
+import { getRepoExecutionHostId, parseExecutionHostId } from '../../../../shared/execution-host'
 import type { ExecutionHostId } from '../../../../shared/execution-host'
 import type { Repo } from '../../../../shared/repo-types'
 import { hasWorktreeRemovalRepoOwnerOnOtherHost } from '../../../worktree-removal-repo-owner'
@@ -18,9 +18,10 @@ import { pruneWorkspaceSpaceAnalysisSnapshot } from '../../../workspace-space-an
 export async function stopPtysForDestructiveWorktreeRemoval(
   runtime: OrcaRuntimeService,
   worktreeId: string,
-  options: { connectionId?: string; allowUnverifiedStop?: boolean } = {}
+  options: { connectionId?: string | null; allowUnverifiedStop?: boolean } = {}
 ): Promise<void> {
-  const { connectionId, allowUnverifiedStop } = options
+  const connectionId = options.connectionId ?? null
+  const { allowUnverifiedStop } = options
   const provider = connectionId ? getSshPtyProvider(connectionId) : getLocalPtyProvider()
   if (!provider) {
     throw new Error(`PTY provider unavailable for worktree deletion: ${worktreeId}`)
@@ -31,7 +32,7 @@ export async function stopPtysForDestructiveWorktreeRemoval(
     // workspace's terminals on another connection — and the selector lookup this replaces
     // throws `selector_ambiguous` the moment two hosts own the id.
     resolvedWorktreeId: worktreeId,
-    ...(connectionId ? { resolvedConnectionId: connectionId } : {}),
+    resolvedConnectionId: connectionId,
     localProvider: provider,
     onPtyStopped: clearProviderPtyState,
     requirePhysicalStop: true,
@@ -67,7 +68,8 @@ export function removeWorktreeMetadataAndTransientState(
   store: Store,
   worktreeId: string,
   hostId?: ExecutionHostId,
-  snapshotPruneBatchId?: string
+  snapshotPruneBatchId?: string,
+  runtime?: OrcaRuntimeService
 ): void {
   const persistedHostId = store.getWorktreeMeta(worktreeId)?.hostId
   const repoId = getRepoIdFromWorktreeId(worktreeId)
@@ -90,6 +92,13 @@ export function removeWorktreeMetadataAndTransientState(
     deleteWorktreeHistoryDir(worktreeId)
     // Why: release the removed worktree's PR-refresh aliases so coalesced queue entries don't retain it all session (memory creep).
     pruneWorktreePRRefreshAliases(worktreeId)
+  }
+  const ownerHost = parseExecutionHostId(hostId)
+  if (ownerHost?.kind !== 'runtime') {
+    runtime?.clearWorktreeTerminalCreationBarrier?.(
+      worktreeId,
+      ownerHost?.kind === 'ssh' ? ownerHost.targetId : null
+    )
   }
   // Why: removed workspaces must never resurrect from the persisted cleanup/space scan snapshots.
   const snapshotDirectory = store.getProfileStorageDirectory()

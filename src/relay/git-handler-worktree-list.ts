@@ -14,17 +14,19 @@ export type RelayWorktreeInfo = {
 export async function readRelayWorktreeList(
   git: GitExec,
   repoPath: string,
-  capabilities: GitCapabilityCache
+  capabilities: GitCapabilityCache,
+  options?: { signal?: AbortSignal; timeout?: number }
 ): Promise<RelayWorktreeInfo[]> {
+  const runGit = (args: string[]) => (options ? git(args, repoPath, options) : git(args, repoPath))
   return capabilities.runWithFallback(
     'worktree-list-z',
     async () => {
-      const { stdout } = await git(['worktree', 'list', '--porcelain', '-z'], repoPath)
+      const { stdout } = await runGit(['worktree', 'list', '--porcelain', '-z'])
       return normalizeRelayWorktrees(parseWorktreeList(stdout, { nulDelimited: true }))
     },
     async () => {
       // Why: `-z` preserves newlines; fallback keeps Git <2.36 compatible.
-      const { stdout } = await git(['worktree', 'list', '--porcelain'], repoPath)
+      const { stdout } = await runGit(['worktree', 'list', '--porcelain'])
       return normalizeRelayWorktrees(parseWorktreeList(stdout))
     },
     isUnsupportedWorktreeListZError

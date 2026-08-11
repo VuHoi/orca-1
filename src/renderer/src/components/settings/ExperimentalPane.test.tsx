@@ -132,6 +132,20 @@ describe('ExperimentalPane', () => {
     )
   })
 
+  it('renders early worktree terminal as an off-by-default searchable experiment', () => {
+    const settings = getDefaultSettings('/tmp')
+    const markup = renderToStaticMarkup(
+      <ExperimentalPane settings={settings} updateSettings={vi.fn()} />
+    )
+
+    expect(settings.experimentalEarlyWorktreeTerminal).toBe(false)
+    expect(markup).toContain('Early worktree terminal')
+    expect(markup).toContain('Remote runtimes use the standard creation flow')
+    expect(getExperimentalPaneSearchEntries().map((entry) => entry.title)).toContain(
+      'Early worktree terminal'
+    )
+  })
+
   it('renders the agent dashboard as an off-by-default searchable experiment', () => {
     const settings = getDefaultSettings('/tmp')
     const markup = renderToStaticMarkup(
@@ -480,6 +494,24 @@ describe('ExperimentalPane', () => {
     })
 
     expect(updateSettings).toHaveBeenCalledWith({ experimentalNewWorktreeCardStyle: true })
+    root.unmount()
+  })
+
+  it('enables early worktree terminal through the experimental switch', async () => {
+    const updateSettings = vi.fn()
+    const { root, container } = await renderExperimentalPane({ updateSettings })
+    const switchButton = container.querySelector<HTMLButtonElement>(
+      '#experimental-early-worktree-terminal button[role="switch"]'
+    )
+    if (!switchButton) {
+      throw new Error('Early worktree terminal switch was not rendered')
+    }
+
+    await act(async () => {
+      switchButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(updateSettings).toHaveBeenCalledWith({ experimentalEarlyWorktreeTerminal: true })
     root.unmount()
   })
 })

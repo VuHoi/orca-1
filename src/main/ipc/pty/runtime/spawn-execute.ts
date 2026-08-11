@@ -22,7 +22,14 @@ export async function executeRuntimePtySpawn(ctx: RuntimePtySpawnState): Promise
   const runtime = ctx.deps.runtime
   const acquireWorktreeSpawn = runtime?.acquireWorktreeTerminalSpawn
   ctx.releaseWorktreeSpawn = acquireWorktreeSpawn
-    ? await acquireWorktreeSpawn.call(runtime, args.worktreeId)
+    ? await acquireWorktreeSpawn.call(
+        runtime,
+        args.worktreeId,
+        args.worktreeTerminalCreationPermit,
+        ctx.cwd,
+        ctx.preAdoptedStablePane?.result.id,
+        args.connectionId ?? null
+      )
     : undefined
   try {
     if (args.preAllocatedHandle) {
@@ -84,7 +91,7 @@ export async function executeRuntimePtySpawn(ctx: RuntimePtySpawnState): Promise
           providerResult = await ctx.provider.spawn(ctx.spawnOptions)
           ctx.rejectedRegistrationCandidate = providerResult
           // Why: a successful lower-owner return proves physical work committed even if admission sees an early exit.
-          ctx.reportPtySpawnCommitted()
+          ctx.reportPtySpawnCommitted(providerResult.id)
           assertSpawnReplyWasLive(providerResult)
           ctx.deps.runtime?.assertPtyRegistrationAllowed?.(
             providerResult.id,
@@ -144,7 +151,7 @@ export async function executeRuntimePtySpawn(ctx: RuntimePtySpawnState): Promise
                 args.worktreeId,
                 args.connectionId
               ),
-            onFreshSpawn: ctx.reportPtySpawnCommitted
+            onFreshSpawn: (freshResult) => ctx.reportPtySpawnCommitted(freshResult.id)
           })
       ctx.result = stablePaneSpawn.result
       ctx.stablePaneOwner = stablePaneSpawn.owner

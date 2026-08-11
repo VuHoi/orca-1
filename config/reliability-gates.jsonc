@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-23",
+  "updatedAt": "2026-08-29",
   "policy": {
     "maturityLevels": ["experimental", "soak", "blocking", "accepted-gap", "deprecated"],
     "blockingPromotion": {
@@ -17037,6 +17037,455 @@
         "The sentinel changes a pane title within an existing layout; concurrent split and close conflicts remain separate coverage."
       ],
       "demotionRule": "Demote if a failed push suppresses an identical retry, a successful equal write resumes redundant churn, or the routed observer journey flakes without a diagnosed cause."
+    },
+    {
+      "id": "git-worktree.early-terminal-checkout-gate",
+      "title": "Early worktree terminals cannot run startup work before checkout readiness",
+      "maturity": "experimental",
+      "protection": "partial",
+      "owner": "worktree-runtime",
+      "layer": "main-runtime-terminal-git-lifecycle",
+      "surfaces": [
+        "local desktop worktree creation",
+        "branch-prefix username resolution",
+        "early terminal reveal and startup command delivery",
+        "checkout materialization and worktree readiness",
+        "create cancellation, failure, and default-tab takeover"
+      ],
+      "platforms": ["macos", "linux", "windows"],
+      "providers": ["local", "wsl"],
+      "coveredPlatforms": ["macos"],
+      "coveredProviders": ["local"],
+      "coverageNotes": "Fresh macOS automation covers the local main/runtime contract, renderer opt-in/cancellation ownership, a real interactive Bash PTY gate with post-checkout prompt-hook reinitialization, a real Git two-phase worktree, and two headless Electron journeys: a renderer-owned xterm held behind a real smudge barrier and checkout-failure teardown before directory rollback. Unit coverage proves outer Bash hook-environment isolation with safe fallback, exact bounded startup-handshake stop proof including post-commit provider-publication failure, fresh username resolution with concurrent-only coalescing, authoritative missing-branch evidence without duplicate local probes across local/WSL/SSH/runtime, direct bounded local/WSL rollback with cleanup-uncertainty reporting, draining of creation-owned concurrent work, local and paired-runtime shared/include cancellation, local and direct-SSH advisory cancellation, host-scoped barrier/adoption/teardown isolation, and mocked relay materialization fallback without treating SSH as an early-terminal provider. The seven-test real-binary contract passes with Git 2.25.1 from Ubuntu 20.04 in an isolated container and installed macOS Git 2.44.0; the pinned v1.4.178/current terminal-stream contract passes in both version-skew directions. Native Windows cmd, PowerShell, Git Bash, and WSL construction remain decoded or mocked on macOS; direct-SSH early terminals are not enabled, physical Windows, Linux, and WSL are uncollected, and Electron cancellation, setup, default-tab, and release-failure variants remain unit-only.",
+      "motivatingLinks": ["experimental early worktree terminal checkpoint"],
+      "invariant": "An opt-in early terminal may become discoverable only after its exact PTY emits the unguessable ready marker, and no user input, sibling terminal, startup agent, setup command, or default-tab command may execute before checkout materialization and every required readiness step succeed. The gate helper exits without launching startup; its release write queues the startup command for the original interactive shell so post-checkout prompt/project hooks can rerun before that shell consumes the command. Explicit or inherited BASH_ENV/ENV must force normal post-checkout startup; an actual early gate must delete both variables before any local or daemon outer Bash starts, and WSL may import only its gate variables. Cancellation must linearize before agent trust, setup, startup, default-tab takeover, or gate release: cancellation that wins suppresses all of them, while cancellation after commit returns false. All creation-owned concurrent work must abort where cooperative and settle before any failed create returns. Local username resolution may coalesce only concurrent probes; completed results must reread mutable config, branch, and remote state, while transient Git failures remain non-authoritative. A candidate local-branch probe may be reused only when Git exit code 1 proves absence; other failures remain unknown and must be reprobed during conflict classification. Failure, reveal degradation, or default-tab takeover must close or retain the blocked gate without sending its release input. Checkout-failure rollback must confirm the gated PTY physically stopped without an unverified-stop waiver before removing its working directory, then use direct Git cleanup without trash, worktree-list, or filesystem-stat discovery; base-config cleanup, local or WSL removal, and branch cleanup share one fresh finite deadline, and any uncertain config or branch cleanup must be reported. Startup-handshake failure or cancellation must await the exact PTY's bounded physical stop, including when the native spawn commits but provider publication rejects before returning; an absent or negative stop proof fails closed and is reported before control returns. A successful create may send the release input only after readiness, emit agent-started telemetry only after the same PTY acknowledges release, and never publish a PTY that exited after its ready marker. Barrier admission, adoption, and failed-create teardown must stay scoped to the execution host.",
+      "oracle": "Hold checkout pending after `git worktree add --no-checkout`, require the terminal to be ready and revealed while release delivery and agent-started telemetry remain absent, then complete checkout/readiness and require one atomic release handshake followed by its acknowledgement and exactly one telemetry event. Start terminal creation first, leave its readiness unresolved, and require checkout materialization to begin before terminal creation settles. Against a real interactive Bash PTY, type a command while held and require it to be swallowed; create `AGENTS.md`, send the exact token-plus-startup release input, and require the helper to emit its released marker and exit, the original shell's `PROMPT_COMMAND` to derive post-checkout environment, and the queued startup to observe it exactly once. Supply explicit and inherited BASH_ENV/ENV and require safe post-checkout fallback; for a real gate, require both keys absent from local and daemon Git Bash outer processes and absent from WSL imports while the two gate variables remain imported. Resolve username config, current branch, and remote state twice with intervening mutations and require fresh results; concurrently resolve one repo and require one shared probe; inject one-shot config, remote-list, remote-URL, default-ref, and current-branch failures and require non-authoritative results followed by successful fresh retries. For candidate branch selection, require one local-head probe per known-missing candidate across local, WSL, SSH, and runtime paths; require known-present evidence to classify locally without another subprocess, and unknown evidence to retry. Race cancellation against the commit boundary, require the winner to be final, and require cancellation that wins to prevent agent trust, setup, startup, default-tab takeover, release, and telemetry. Fail local add, paired-runtime add or post-add registration, and direct-SSH add while their speculative probes are pending, then require their abort signals and settlement before the failed create returns; also hold non-cooperative readiness, push-target, and post-registration work and require each failed path to drain it before returning. Inject pre-materialization, checkout, post-checkout readiness, reveal, release, close, and exact-stop failures; require the gate never to be released, require physical stop before checkout rollback, pin the failed-create call site's unverified-stop option to false, preserve the partial worktree for manual cleanup when stop cannot be confirmed, and retain a valid completed checkout without agent, setup, or default-tab startup. After verified PTY stop, require only direct base-config unset, worktree remove, and branch deletion under one fresh 30-second signal; prohibit trash/list/stat discovery, preserve WSL routing, stall removal to require bounded failure, and inject config and branch failures to require cleanupFailed manual-cleanup guidance. Independently require runtime creation to withhold publication and reveal until the ready marker, reject an exit observed after a retained marker, and on never-ready, cancelled, or otherwise failed startup handshakes require bounded stopAndWait proof for the exact PTY before rejection; make native spawn commit and then reject provider publication before it returns, require the committed PTY id to reach the same exact-stop path, and require a false proof to report terminal_startup_handshake_stop_unverified. Require release to be one atomic write followed by acknowledgement from the same PTY. Reuse an identical worktree id and path across hosts and require barriers, leases, adoption, and teardown to affect only same-host live PTYs. In Electron, block tracked-file smudge during checkout, require the pending row and paused xterm with no agent ledger, type pre-release input and require it absent, and require split/new-tab attempts to show a persistent preparation error without spawning a sibling PTY. Release checkout, then require exactly one fake agent to read tracked `AGENTS.md` and accept only post-release input. In a separate checkout-failure journey, require the exact bootstrap PTY to disappear before its working directory is rolled back.",
+      "commands": [
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/worktree-early-terminal.test.ts src/main/ipc/worktree-early-terminal-wsl.test.ts src/main/ipc/worktrees-ssh-branch-conflict-suffixing.test.ts src/main/ipc/worktrees-removal-recovery.test.ts src/main/ipc/pty-pane-claim-arbitration.test.ts src/shared/worktree-checkout-gate.test.ts src/main/git/worktree-materialization.test.ts src/main/runtime/terminal-output-marker-wait.test.ts src/main/runtime/pty-waiver-source-invariant.test.ts src/main/ipc/sender-scoped-request-cancellation.test.ts src/main/git/worktree-add-local-base-suggestion.test.ts src/main/git/worktree-create-rollback.test.ts src/main/git/repo-username.test.ts src/main/git/repo-branch-conflict-probe.test.ts src/main/git/worktree-shared-directories.test.ts src/main/git/worktree-include-file.test.ts src/main/providers/local-pty-provider-windows-shell-launch.test.ts src/main/providers/local-pty-provider-spawn-session.test.ts src/main/providers/ssh-git-provider-worktree.test.ts src/main/daemon/pty-subprocess.test.ts src/relay/git-handler-worktree-ops.test.ts src/shared/git-binary-compatibility.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/settings/ExperimentalPane.test.tsx src/renderer/src/components/terminal-pane/TerminalErrorToast.test.ts src/renderer/src/hooks/useComposerState-host-context-boundaries.test.ts src/renderer/src/lib/worktree-creation-flow.test.ts src/renderer/src/lib/worktree-creation-flow-cancellation.test.ts src/renderer/src/lib/worktree-creation-flow-startup.test.ts src/renderer/src/store/slices/worktrees-create-base-status.test.ts src/renderer/src/store/slices/worktrees-remote-runtime-create.test.ts src/renderer/src/store/slices/worktrees-pending-creation-state.test.ts",
+        "ORCA_GIT_COMPAT_IMAGE=orca-git-2.25 ORCA_GIT_COMPAT_VERSION=2.25.1 pnpm exec vitest run --config config/vitest.config.ts src/shared/git-binary-compatibility.test.ts",
+        "ORCA_GIT_COMPAT_BINARY=/opt/homebrew/bin/git ORCA_GIT_COMPAT_VERSION=2.44.0 pnpm exec vitest run --config config/vitest.config.ts src/shared/git-binary-compatibility.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/relay/git-handler-worktree-advisory-cancellation.test.ts",
+        "ORCA_CROSS_VERSION_BASELINE_REF=v1.4.178 pnpm exec vitest run --config config/vitest.config.ts tests/e2e/cross-version-wire/cross-version-terminal-wire.unit.test.ts",
+        "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts",
+        "pnpm build:relay",
+        "VITE_EXPOSE_STORE=true pnpm exec electron-vite build --mode e2e",
+        "PLAYWRIGHT_HTML_OPEN=never SKIP_BUILD=1 pnpm exec playwright test tests/e2e/worktree-early-terminal.spec.ts --config tests/playwright.config.ts --project electron-headless --workers=1",
+        "PLAYWRIGHT_HTML_OPEN=never SKIP_BUILD=1 pnpm exec playwright test tests/e2e/worktree-early-terminal.spec.ts --config tests/playwright.config.ts --project electron-headless --workers=1 --repeat-each=3"
+      ],
+      "testFiles": [
+        "src/main/ipc/worktree-early-terminal.test.ts",
+        "src/main/ipc/worktree-early-terminal-wsl.test.ts",
+        "src/main/ipc/worktrees-ssh-branch-conflict-suffixing.test.ts",
+        "src/main/ipc/worktrees-removal-recovery.test.ts",
+        "src/main/ipc/pty-pane-claim-arbitration.test.ts",
+        "src/shared/worktree-checkout-gate.test.ts",
+        "src/main/git/worktree-materialization.test.ts",
+        "src/main/runtime/terminal-output-marker-wait.test.ts",
+        "src/main/runtime/pty-waiver-source-invariant.test.ts",
+        "src/main/ipc/sender-scoped-request-cancellation.test.ts",
+        "src/main/git/worktree-add-local-base-suggestion.test.ts",
+        "src/main/git/worktree-create-rollback.test.ts",
+        "src/main/git/repo-username.test.ts",
+        "src/main/git/repo-branch-conflict-probe.test.ts",
+        "src/main/git/worktree-shared-directories.test.ts",
+        "src/main/git/worktree-include-file.test.ts",
+        "src/main/providers/local-pty-provider-windows-shell-launch.test.ts",
+        "src/main/providers/local-pty-provider-spawn-session.test.ts",
+        "src/main/providers/ssh-git-provider-worktree.test.ts",
+        "src/main/daemon/pty-subprocess.test.ts",
+        "src/relay/git-handler-worktree-ops.test.ts",
+        "src/relay/git-handler-worktree-advisory-cancellation.test.ts",
+        "src/renderer/src/components/settings/ExperimentalPane.test.tsx",
+        "src/renderer/src/components/terminal-pane/TerminalErrorToast.test.ts",
+        "src/renderer/src/hooks/useComposerState-host-context-boundaries.test.ts",
+        "src/renderer/src/lib/worktree-creation-flow.test.ts",
+        "src/renderer/src/lib/worktree-creation-flow-cancellation.test.ts",
+        "src/renderer/src/lib/worktree-creation-flow-startup.test.ts",
+        "src/renderer/src/store/slices/worktrees-create-base-status.test.ts",
+        "src/renderer/src/store/slices/worktrees-remote-runtime-create.test.ts",
+        "src/renderer/src/store/slices/worktrees-pending-creation-state.test.ts",
+        "src/shared/git-binary-compatibility.test.ts",
+        "src/main/runtime/orca-runtime.test.ts",
+        "tests/e2e/cross-version-wire/cross-version-terminal-wire.unit.test.ts",
+        "tests/e2e/worktree-early-terminal.spec.ts"
+      ],
+      "assertionRefs": [
+        {
+          "file": "src/main/ipc/worktree-early-terminal.test.ts",
+          "assertions": [
+            "explicit startup shell-hook environment falls back to normal post-checkout startup with BASH_ENV and ENV preserved, and inherited BASH_ENV also disables the early path",
+            "failed worktree add aborts and settles speculative shared-directory and include-file discovery",
+            "add and later local failures abort readiness discovery but do not return until non-cooperative shared/include promises settle; failed listing likewise drains an in-flight push-target mutation",
+            "terminal creation is invoked before checkout materialization, and materialization begins while terminal readiness remains pending",
+            "checkout and readiness complete before one acknowledged release starts the agent, returns an interactive shell, or emits agent-started telemetry",
+            "cancellation that wins before commit suppresses trust, setup, startup, default tabs, and release, while later cancellation loses; readiness failures close without release and apply the correct rollback boundary",
+            "checkout failure waits for exact PTY stop before rollback, accepts an already-stopped target, and preserves the partial worktree when stop cannot be confirmed",
+            "an unverified startup-handshake stop fails closed, retains metadata and the completed checkout, keeps the barrier failed, and never invokes Git rollback",
+            "a background reveal warning falls back to post-checkout startup, while default-tab takeover retains and retries a failed close without release",
+            "Claude Agent Teams launches retain the standard checkout path so the runtime can apply its startup-command rewrite",
+            "native Windows cmd, PowerShell, and Git Bash preserve their platform-specific gate construction"
+          ]
+        },
+        {
+          "file": "src/main/ipc/worktree-early-terminal-wsl.test.ts",
+          "assertions": [
+            "configured wsl.exe, selected WSL runtimes, and auto-routed WSL UNC paths use the isolated POSIX gate, delete outer BASH_ENV and ENV, import the gate variables through WSLENV, preserve distro-specific Git routing, and record WSL timing"
+          ]
+        },
+        {
+          "file": "src/main/ipc/worktrees-ssh-branch-conflict-suffixing.test.ts",
+          "assertions": [
+            "known-missing SSH suffix candidates perform exactly one remote local-head probe per candidate"
+          ]
+        },
+        {
+          "file": "src/main/ipc/worktrees-removal-recovery.test.ts",
+          "assertions": [
+            "local and SSH folder removal scope PTY teardown to the owning host, while mirrored paired-runtime folder removal delegates teardown to its environment"
+          ]
+        },
+        {
+          "file": "src/shared/worktree-checkout-gate.test.ts",
+          "assertions": [
+            "POSIX gates launch an isolated env BASH_ENV= ENV= bash --noprofile --norc process, POSIX and Windows gate commands contain no startup command, and atomic release input carries the nonce token followed by startup bytes for the original shell",
+            "a real interactive Bash PTY swallows pre-release input, then reruns its project prompt hook and executes the queued startup exactly once after release"
+          ]
+        },
+        {
+          "file": "src/main/git/worktree-materialization.test.ts",
+          "assertions": [
+            "a real Git worktree has no checked-out file after --no-checkout and is clean and populated only after materialization"
+          ]
+        },
+        {
+          "file": "src/main/runtime/terminal-output-marker-wait.test.ts",
+          "assertions": [
+            "fragmented markers are retained across PTY binding and accepted only from the target PTY",
+            "PTY exit and bounded timeout reject marker waits, including exit after a retained ready marker but before PTY binding"
+          ]
+        },
+        {
+          "file": "src/main/runtime/pty-waiver-source-invariant.test.ts",
+          "assertions": [
+            "every destructive PTY-stop call site names an approved waiver source or explicit strict false, and failed-create teardown cannot derive a waiver from force or another boolean"
+          ]
+        },
+        {
+          "file": "src/main/ipc/sender-scoped-request-cancellation.test.ts",
+          "assertions": [
+            "only the owning renderer sender can abort its live create request",
+            "commit and cancellation linearize so exactly one wins and later cancellation returns false"
+          ]
+        },
+        {
+          "file": "src/main/git/worktree-add-local-base-suggestion.test.ts",
+          "assertions": [
+            "local checkout failure aborts and settles the concurrent local-base advisory",
+            "a successful checkout can overlap with a bounded advisory without letting the advisory fail creation"
+          ]
+        },
+        {
+          "file": "src/main/git/worktree-create-rollback.test.ts",
+          "assertions": [
+            "rollback replaces checkout cancellation with one fresh 30-second signal and directly runs config unset, forced worktree removal, and fresh-branch deletion without deferred trash or a Git worktree-list scan",
+            "WSL rollback uses the same bounded signal and distro routing for direct removal and branch deletion without local trash",
+            "branch deletion failure, stale worktree ownership after prune retry, and non-absent branch-base config cleanup failure set cleanupFailed and retain manual-cleanup guidance; absent config is treated as already clean",
+            "a non-cooperative stalled removal is aborted at the cleanup deadline and reported as uncertain cleanup"
+          ]
+        },
+        {
+          "file": "src/main/git/repo-username.test.ts",
+          "assertions": [
+            "concurrent same-path username resolutions coalesce while completed config, remote, and current-branch probes resolve fresh",
+            "one-shot config, remote-list, remote-URL, default-ref, and current-branch failures remain non-authoritative and retry on the next resolution"
+          ]
+        },
+        {
+          "file": "src/main/git/repo-branch-conflict-probe.test.ts",
+          "assertions": [
+            "authoritative known-missing local and WSL branch evidence skips a second local-ref subprocess while remote classification continues",
+            "authoritative known-present evidence returns a local conflict without any subprocess",
+            "unknown evidence from an earlier transient failure repeats local classification instead of treating absence as authoritative"
+          ]
+        },
+        {
+          "file": "src/main/git/worktree-shared-directories.test.ts",
+          "assertions": ["an aborted speculative resolver stops before shared-directory discovery"]
+        },
+        {
+          "file": "src/main/git/worktree-include-file.test.ts",
+          "assertions": [
+            "an aborted speculative resolver stops before filesystem and Git include-file discovery"
+          ]
+        },
+        {
+          "file": "src/main/ipc/pty-pane-claim-arbitration.test.ts",
+          "assertions": [
+            "fresh provider commitment forwards the exact PTY id before later runtime admission can reject"
+          ]
+        },
+        {
+          "file": "src/main/providers/local-pty-provider-windows-shell-launch.test.ts",
+          "assertions": [
+            "the local Windows Git Bash outer launcher applies envToDelete after environment shaping so BASH_ENV and ENV cannot run before the isolated checkout gate"
+          ]
+        },
+        {
+          "file": "src/main/providers/local-pty-provider-spawn-session.test.ts",
+          "assertions": [
+            "native spawn commitment reports the exact PTY id before a later provider-publication callback can reject"
+          ]
+        },
+        {
+          "file": "src/main/providers/ssh-git-provider-worktree.test.ts",
+          "assertions": [
+            "materialization uses a bounded relay RPC and falls back to the legacy sparse sequence only on method-not-found",
+            "an old relay that rejects sparse checkout produces update guidance while real fallback failures are preserved",
+            "direct-SSH advisory requests keep cancellation transport-local, including the old-relay fallback"
+          ]
+        },
+        {
+          "file": "src/main/daemon/pty-subprocess.test.ts",
+          "assertions": [
+            "the daemon Windows Git Bash outer launcher removes BASH_ENV and ENV before spawning the interactive shell"
+          ]
+        },
+        {
+          "file": "src/relay/git-handler-worktree-ops.test.ts",
+          "assertions": [
+            "relay materialization preserves checkout workers and forwards force, cancellation, and per-command timeout bounds"
+          ]
+        },
+        {
+          "file": "src/relay/git-handler-worktree-advisory-cancellation.test.ts",
+          "assertions": [
+            "request cancellation reaches and settles relay Git execution for clean-worktree and local-base advisory RPCs, while full clean checks retain the removal-preflight timeout",
+            "every check-only local-base subprocess and ref update receives the shared request signal and auxiliary timeout bound, while owner reset retains the long worktree timeout"
+          ]
+        },
+        {
+          "file": "src/renderer/src/components/settings/ExperimentalPane.test.tsx",
+          "assertions": [
+            "the early-terminal experiment is searchable, disabled by default, and enabled only through its settings switch"
+          ]
+        },
+        {
+          "file": "src/renderer/src/components/terminal-pane/TerminalErrorToast.test.ts",
+          "assertions": [
+            "checkout-barrier admission failures surface persistent preparation copy instead of an internal error code"
+          ]
+        },
+        {
+          "file": "src/renderer/src/hooks/useComposerState-host-context-boundaries.test.ts",
+          "assertions": [
+            "full and quick composer submits capture the experiment only for Git worktree creates, with multi-create focus suppression"
+          ]
+        },
+        {
+          "file": "src/renderer/src/lib/worktree-creation-flow-cancellation.test.ts",
+          "assertions": [
+            "backend cancellation removes the pending create before renderer trust, activation, terminal, agent, or focus startup"
+          ]
+        },
+        {
+          "file": "src/renderer/src/lib/worktree-creation-flow-startup.test.ts",
+          "assertions": [
+            "early local desktop startup owns one command and launch token while paired-runtime, SSH, and paired-web creates retain their standard ownership"
+          ]
+        },
+        {
+          "file": "src/renderer/src/store/slices/worktrees-create-base-status.test.ts",
+          "assertions": ["the opt-in reaches only local desktop create IPC"]
+        },
+        {
+          "file": "src/renderer/src/store/slices/worktrees-remote-runtime-create.test.ts",
+          "assertions": ["the opt-in is omitted from paired-runtime RPC"]
+        },
+        {
+          "file": "src/renderer/src/store/slices/worktrees-pending-creation-state.test.ts",
+          "assertions": [
+            "pending early creates remain visible until cancellation is accepted, retain committed or failed attempts, and reject stale cancellation after retry",
+            "paired-runtime and SSH pending creates never send desktop early-create cancellation"
+          ]
+        },
+        {
+          "file": "src/shared/git-binary-compatibility.test.ts",
+          "assertions": [
+            "the opt-in real-binary matrix materializes a worktree created with --no-checkout through repo-relative container-safe paths and preserves global Git options before checkout"
+          ]
+        },
+        {
+          "file": "tests/e2e/cross-version-wire/cross-version-terminal-wire.unit.test.ts",
+          "assertions": [
+            "the current and pinned v1.4.178 terminal stream complete subscribe, input, hide/reveal snapshot, drop, and reconnect journeys in both skew directions"
+          ]
+        },
+        {
+          "file": "src/main/runtime/orca-runtime.test.ts",
+          "assertions": [
+            "terminal creation waits for the startup ready marker before publication or reveal and kills a never-ready PTY",
+            "startup-handshake timeout, cancellation, pre-bind exit, and post-commit provider-publication rejection await bounded stopAndWait proof for the exact PTY before returning; false proof reports terminal_startup_handshake_stop_unverified and prevents publication",
+            "a ready marker followed by PTY exit before binding cannot publish a dead terminal",
+            "terminal release is one atomic write and resolves only after same-PTY acknowledgement, while PTY exit rejects it",
+            "checkout permits are one-shot and block sibling ids, nested paths, and unpermitted terminal spawns",
+            "barriers and mutation leases are host-scoped; only exact same-host live bootstrap PTYs may be adopted",
+            "paired-runtime shared/include discovery aborts and settles on add failure and post-add registration failure",
+            "mirrored-runtime sleep and mutation state remain isolated from a same-id local PTY",
+            "metadata cleanup preserves same-id local and SSH barriers when runtime ownership is persisted, uses persisted desktop ownership when present, and falls back to the caller host only for absent or malformed metadata",
+            "failed local checkout teardown does not stop a same-id SSH PTY, and failed admission remains closed until explicit cleanup",
+            "adoption rechecks liveness after failed-create teardown wins the mutation lease",
+            "runtime local and selected-WSL candidates reuse authoritative absence for exactly one local-head probe, while transient evidence remains undefined and permits retry classification"
+          ]
+        },
+        {
+          "file": "tests/e2e/worktree-early-terminal.spec.ts",
+          "assertions": [
+            "a real checkout remains blocked while the pending workspace and renderer-owned paused xterm are visible and fake Codex has not started",
+            "split and new-tab shortcuts surface a persistent preparation error without spawning a sibling PTY",
+            "input typed before checkout release is swallowed, while post-release xterm input reaches the fake agent",
+            "exactly one fake agent starts after release and reads the tracked AGENTS.md from the materialized checkout",
+            "checkout failure removes the exact bootstrap PTY before rolling back its working directory"
+          ]
+        }
+      ],
+      "evidenceRuns": [
+        {
+          "date": "2026-08-29",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/ipc/worktree-early-terminal.test.ts src/main/ipc/worktree-early-terminal-wsl.test.ts src/main/ipc/worktrees-ssh-branch-conflict-suffixing.test.ts src/main/ipc/worktrees-removal-recovery.test.ts src/main/ipc/pty-pane-claim-arbitration.test.ts src/shared/worktree-checkout-gate.test.ts src/main/git/worktree-materialization.test.ts src/main/runtime/terminal-output-marker-wait.test.ts src/main/runtime/pty-waiver-source-invariant.test.ts src/main/ipc/sender-scoped-request-cancellation.test.ts src/main/git/worktree-add-local-base-suggestion.test.ts src/main/git/worktree-create-rollback.test.ts src/main/git/repo-username.test.ts src/main/git/repo-branch-conflict-probe.test.ts src/main/git/worktree-shared-directories.test.ts src/main/git/worktree-include-file.test.ts src/main/providers/local-pty-provider-windows-shell-launch.test.ts src/main/providers/local-pty-provider-spawn-session.test.ts src/main/providers/ssh-git-provider-worktree.test.ts src/main/daemon/pty-subprocess.test.ts src/relay/git-handler-worktree-ops.test.ts src/shared/git-binary-compatibility.test.ts",
+          "result": "passed",
+          "durationSeconds": 7.57,
+          "summary": "Twenty-two selected files produced 21 passing files and one skipped file: 269 tests passed and nine tests skipped. Passing coverage included strict failed-create PTY-stop invariants, exact committed-PTY identity propagation after post-spawn publication failure, exact bounded startup-handshake stop proof, isolated local/daemon Git Bash outer environments and WSL gate construction, direct bounded rollback with cleanup-uncertainty reporting, one-probe authoritative branch evidence across local/WSL/SSH/runtime, non-cooperative create-work draining, fresh username resolution and transient-read retry, the real interactive Bash gate, real Git two-phase materialization, local and direct-SSH speculative cancellation, host-scoped removal cleanup, relay materialization and old-relay fallback contracts, cancellation linearization, and marker exit/timeout ordering."
+        },
+        {
+          "date": "2026-08-29",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/renderer/src/components/settings/ExperimentalPane.test.tsx src/renderer/src/components/terminal-pane/TerminalErrorToast.test.ts src/renderer/src/hooks/useComposerState-host-context-boundaries.test.ts src/renderer/src/lib/worktree-creation-flow.test.ts src/renderer/src/lib/worktree-creation-flow-cancellation.test.ts src/renderer/src/lib/worktree-creation-flow-startup.test.ts src/renderer/src/store/slices/worktrees-create-base-status.test.ts src/renderer/src/store/slices/worktrees-remote-runtime-create.test.ts src/renderer/src/store/slices/worktrees-pending-creation-state.test.ts",
+          "result": "passed",
+          "durationSeconds": 5.17,
+          "summary": "Nine renderer files passed 174 tests covering the off-by-default searchable setting, local-only option capture and transport, renderer/backend startup ownership, cancellation commit races and retry identity, and persistent sibling-terminal barrier copy."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "ORCA_GIT_COMPAT_IMAGE=orca-git-2.25 ORCA_GIT_COMPAT_VERSION=2.25.1 pnpm exec vitest run --config config/vitest.config.ts src/shared/git-binary-compatibility.test.ts",
+          "result": "passed",
+          "durationSeconds": 5.47,
+          "summary": "All seven real-binary contracts passed through an isolated Ubuntu 20.04 arm64 image using package git 1:2.25.1-1ubuntu3.14 with Git as the container entrypoint, including repo-relative two-phase worktree materialization."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "ORCA_GIT_COMPAT_BINARY=/opt/homebrew/bin/git ORCA_GIT_COMPAT_VERSION=2.44.0 pnpm exec vitest run --config config/vitest.config.ts src/shared/git-binary-compatibility.test.ts",
+          "result": "passed",
+          "durationSeconds": 0.465,
+          "summary": "All seven real-binary contracts passed with installed Git 2.44.0, including two-phase worktree materialization and global-option command ordering."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/relay/git-handler-worktree-advisory-cancellation.test.ts",
+          "result": "passed",
+          "durationSeconds": 0.367,
+          "summary": "All six relay advisory contracts passed: request cancellation reached Git children, tracked-only probes retained five-second bounds, full removal clean checks retained 30 seconds, every local-base probe and ref update was bounded, and owner reset retained 180 seconds."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "ORCA_CROSS_VERSION_BASELINE_REF=v1.4.178 pnpm exec vitest run --config config/vitest.config.ts tests/e2e/cross-version-wire/cross-version-terminal-wire.unit.test.ts",
+          "result": "passed",
+          "durationSeconds": 5.44,
+          "summary": "All four pinned cross-version terminal-wire contracts passed against v1.4.178 in both current-host/old-client and old-host/current-client directions."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm exec vitest run --config config/vitest.config.ts src/main/runtime/orca-runtime.test.ts",
+          "result": "passed",
+          "durationSeconds": 11.05,
+          "summary": "The full main runtime suite passed 1,104 tests with one skip, including ready-before-publication/reveal, bounded exact-PTY stop proof for failed startup handshakes and post-commit provider-publication rejection, retained-marker exit rejection, never-ready PTY termination, atomic release delivery, same-PTY acknowledgement, authoritative branch-evidence reuse with transient retry, paired-runtime speculative cancellation on add and registration failure, mirrored-runtime versus local sleep isolation, persisted metadata cleanup host isolation, one-shot checkout admission, host-scoped barriers and leases, exact live bootstrap adoption, failed-create teardown isolation, and adoption revalidation."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "pnpm build:relay",
+          "result": "passed",
+          "durationSeconds": 1.43,
+          "summary": "The relay bundled successfully for Linux, macOS, and Windows on x64 and arm64, plus the WSL hook relay; this is build coverage, not physical target execution."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "VITE_EXPOSE_STORE=true pnpm exec electron-vite build --mode e2e",
+          "result": "passed",
+          "durationSeconds": 2.56,
+          "summary": "A fresh E2E-mode Electron build completed before both focused renderer-owned terminal journeys."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "PLAYWRIGHT_HTML_OPEN=never SKIP_BUILD=1 pnpm exec playwright test tests/e2e/worktree-early-terminal.spec.ts --config tests/playwright.config.ts --project electron-headless --workers=1",
+          "result": "passed",
+          "durationSeconds": 20,
+          "summary": "Both headless Electron journeys passed once: the real smudge-barrier success path and checkout-failure bootstrap teardown before directory rollback."
+        },
+        {
+          "date": "2026-08-10",
+          "runner": "local",
+          "platform": "macos",
+          "command": "PLAYWRIGHT_HTML_OPEN=never SKIP_BUILD=1 pnpm exec playwright test tests/e2e/worktree-early-terminal.spec.ts --config tests/playwright.config.ts --project electron-headless --workers=1 --repeat-each=3",
+          "result": "passed",
+          "durationSeconds": 72,
+          "summary": "Six repeated headless Electron tests passed after the immediately preceding single run: three success journeys and three checkout-failure rollback journeys. The success journey proved a visible paused xterm during a real checkout barrier, blocked split/new-tab PTY creation, swallowed pre-release input, exactly one post-checkout fake-Codex startup reading tracked AGENTS.md, and accepted post-release input; the failure journey proved PTY teardown before directory rollback."
+        }
+      ],
+      "runtimeBudget": {
+        "p95Seconds": 90,
+        "scope": "target per focused invocation for the worktree gate contracts, real-binary Git compatibility runs, full main runtime integration suite, fresh E2E build, or six-test repeated headless Electron run; this is a test budget, not measured product latency"
+      },
+      "flakeHistory": {
+        "status": "not-started",
+        "evidence": "Nine consecutive local macOS repetitions of each of the two Electron journeys passed across fresh builds, 18 test executions total, alongside deterministic unit/runtime runs; dedicated CI and soak history have not started. The contract uses observed marker, promise, file, and process-exit barriers rather than elapsed sleeps, except for bounded negative timeout oracles."
+      },
+      "redGreenEvidence": {
+        "status": "partial",
+        "evidence": "Checkpoint audit tests reproduce stale completed username results, transient Git reads cached as authoritative, rollback inheriting an already-aborted checkout signal, omitted explicit failed-create PTY-stop strictness, unbounded WSL/direct removal, missing rollback, hidden-terminal release, close-rejection, speculative-work cancellation, ready-before-reveal, pre-bind marker/exit ordering, premature agent-started telemetry, release acknowledgement, host-scope isolation, sibling-spawn admission, and physical-stop-before-rollback failures addressed by this implementation, and are green on the current tree. The first container materialization run exposed an absolute host-path harness mismatch; the repo-relative oracle then passed all seven tests on Git 2.25.1 and 2.44.0. That is harness red/green evidence, not a byte-identical product baseline/candidate/revert run, which has not yet been archived."
+      },
+      "performanceBudget": {
+        "required": true,
+        "evidence": "No reproducible end-to-end speedup or no-regression measurement is recorded; the fresh command durations, including the Git 2.25.1 and 2.44.0 compatibility runs, are functional test evidence only and local timing is workload- and cache-dependent. The experiment registers with one `--no-checkout` Git operation, overlaps terminal readiness plus bounded shared/include and local-base discovery, and performs one materialization checkout while respecting the user's checkout worker configuration. Terminal spawn is invoked first and checkout begins immediately without awaiting terminal readiness. Username resolution retains at most one unresolved promise per exact repo path and no completed local-resolution cache, preventing stale mutable Git state while coalescing concurrent creates. Exit-code-1 branch evidence removes the duplicate local-head subprocess for ordinary missing candidates across local, WSL, SSH, and runtime selection while unknown/transient evidence retains the correctness-preserving retry. Failed local or paired-runtime creation aborts and settles shared/include discovery, while failed local or direct-SSH add aborts and settles its base advisory; later failures also drain non-cooperative creation-owned work before returning. The local early-terminal path retains one gated terminal and at most one bounded ready-marker wait plus one bounded release-acknowledgement wait, with no main-process polling, provider fanout, or unbounded retry. The post-notify observer path still re-lists worktrees; eliminating that follow-up scan remains deferred work. Checkout failure adds at most two exact-stop attempts before filesystem rollback; after verified terminal stop, every rollback Git command shares one fresh 30-second deadline. Cancellation and other failures close rather than start additional work."
+      },
+      "promotionCriteria": [
+        "Collect 100 consecutive focused CI passes or 14 days of soak history with zero unexplained release-before-readiness failures.",
+        "Run a physical Windows journey covering native cmd.exe, PowerShell, and Git Bash terminal gates.",
+        "Run a physical Linux journey covering the POSIX terminal gate and checkout materialization.",
+        "Run a physical Windows WSL journey covering WSL terminal import, distro-specific Git routing, cancellation, and release acknowledgement.",
+        "Extend Electron coverage to inactive presentation, dismissal/cancellation during checkout, setup/default-tab takeover, and release-failure cleanup.",
+        "Exercise materialization fallback against an actual older relay.",
+        "Close the remaining raw PTY-spawn admission race and process-crash barrier persistence gaps."
+      ],
+      "knownGaps": [
+        "Physical Windows evidence is missing; cmd.exe, PowerShell, and Git Bash are currently covered only by macOS-hosted construction and decode assertions.",
+        "Physical Linux evidence is missing; the real POSIX PTY run was collected on macOS.",
+        "Physical WSL evidence is missing; WSLENV, distro routing, and direct rollback deadline propagation are mocked on macOS rather than exercised in a Windows WSL terminal.",
+        "Electron coverage contains macOS headless success and checkout-failure rollback journeys; inactive presentation, dismissal/cancellation, setup/default-tab takeover, and release-failure cleanup remain unit-only.",
+        "Direct-SSH early terminals are not enabled. SSH evidence is limited to advisory cancellation, host isolation, mocked new-RPC and method-not-found fallback contracts, and update guidance; no live SSH transport or old relay was exercised.",
+        "Raw PTY-spawn preflight still has an admission race, and process-crash persistence for checkout barriers is not covered.",
+        "No reproducible end-to-end speedup or no-regression benchmark is recorded.",
+        "No real Codex, Claude, or project setup command was launched; tests use deterministic commands and mocks so safety is observable without account or project side effects."
+      ],
+      "demotionRule": "Keep experimental or demote if any input, agent, setup, or default-tab command can run before checkout/readiness; if BASH_ENV or ENV can reach an outer gate shell; if cancellation or failure can send release or agent-started telemetry; if a terminal can reveal before its ready marker, publish after a pre-bind exit, return success before release acknowledgement, or return a startup-handshake failure without bounded physical-stop proof; if failed creation returns with creation-owned concurrent work still running; if checkout rollback can waive verified PTY stop, race a live gated PTY, inherit checkout cancellation, enter trash/list/stat discovery, hide config or branch cleanup uncertainty, lose WSL routing, exceed its deadline without reporting cleanup failure, remove a valid completed checkout, or retain an invalid registration; if completed username results become stale, authoritative missing-branch evidence is discarded, or transient Git failures become authoritative; or if the focused contract flakes without an identified product or harness fault."
     }
   ]
 }

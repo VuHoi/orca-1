@@ -198,7 +198,8 @@ describe('submodule path cache', () => {
   it('drops a same-path negative cache when a local or WSL worktree is recreated', async () => {
     let recreated = false
     gitExecFileAsyncMock.mockImplementation((args: string[]) => {
-      if (args[0] === 'worktree' && args[1] === 'add') {
+      const worktreeIndex = args.indexOf('worktree')
+      if (worktreeIndex !== -1 && args[worktreeIndex + 1] === 'add') {
         recreated = true
       }
       if (args[0] === 'config' && args.includes('.gitmodules')) {

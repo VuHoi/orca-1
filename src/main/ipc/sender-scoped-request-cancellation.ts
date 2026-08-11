@@ -10,7 +10,13 @@ export type SenderScopedRequestCancellations = {
     controller: AbortController | null
   ) => void
   /** Best-effort abort from the issuing webContents; a settled request is gone. */
-  cancel: (event: IpcMainInvokeEvent, requestToken: string) => void
+  cancel: (event: IpcMainInvokeEvent, requestToken: string) => boolean
+  /** Atomically closes cancellation before an irreversible side effect begins. */
+  commit: (
+    event: IpcMainInvokeEvent,
+    requestToken: string | undefined,
+    controller: AbortController | null
+  ) => boolean
 }
 
 /**
@@ -44,7 +50,23 @@ export function createSenderScopedRequestCancellations(): SenderScopedRequestCan
       }
     },
     cancel: (event, requestToken) => {
-      controllers.get(keyFor(event, requestToken))?.abort()
+      const controller = controllers.get(keyFor(event, requestToken))
+      if (!controller) {
+        return false
+      }
+      controller.abort()
+      return true
+    },
+    commit: (event, requestToken, controller) => {
+      if (!requestToken || !controller) {
+        return true
+      }
+      const key = keyFor(event, requestToken)
+      if (controller.signal.aborted || controllers.get(key) !== controller) {
+        return false
+      }
+      controllers.delete(key)
+      return true
     }
   }
 }

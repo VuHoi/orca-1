@@ -4,6 +4,10 @@ import { gitExecFileAsync } from './runner'
 
 export type BranchConflictKind = 'local' | 'remote'
 
+type LocalBranchConflictOptions = LocalGitExecOptions & {
+  knownLocalBranchExists?: boolean
+}
+
 async function hasGitRefAsync(exec: GitExec, ref: string): Promise<boolean> {
   try {
     const { stdout } = await exec(['rev-parse', '--verify', ref])
@@ -30,9 +34,10 @@ async function listRemoteNamesViaExec(exec: GitExec): Promise<string[]> {
 export async function getBranchConflictKindViaExec(
   exec: GitExec,
   branchName: string,
-  allowedBaseRef?: string
+  allowedBaseRef?: string,
+  knownLocalBranchExists?: boolean
 ): Promise<BranchConflictKind | null> {
-  if (await hasGitRefAsync(exec, `refs/heads/${branchName}`)) {
+  if (knownLocalBranchExists ?? (await hasGitRefAsync(exec, `refs/heads/${branchName}`))) {
     return 'local'
   }
 
@@ -57,13 +62,15 @@ export function getBranchConflictKind(
   path: string,
   branchName: string,
   allowedBaseRef?: string,
-  options: LocalGitExecOptions = {}
+  options: LocalBranchConflictOptions = {}
 ): Promise<BranchConflictKind | null> {
-  const execOptions = gitExecOptions(path, options)
+  const { knownLocalBranchExists, ...gitOptions } = options
+  const execOptions = gitExecOptions(path, gitOptions)
   return getBranchConflictKindViaExec(
     (argv) => gitExecFileAsync(argv, execOptions),
     branchName,
-    allowedBaseRef
+    allowedBaseRef,
+    knownLocalBranchExists
   )
 }
 

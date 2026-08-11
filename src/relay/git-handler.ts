@@ -41,6 +41,7 @@ import {
   areRelayWorktreePathsEqual,
   commitChangesRelay,
   addWorktreeOp,
+  materializeWorktreeCheckoutOp,
   removeWorktreeOp,
   worktreeIsCleanOp
 } from './git-handler-worktree-ops'
@@ -303,11 +304,16 @@ export class GitHandler {
     this.dispatcher.onRequest('git.branchDiff', (p, context) => this.branchDiff(p, context))
     this.dispatcher.onRequest('git.commitDiff', (p, context) => this.commitDiff(p, context))
     this.dispatcher.onRequest('git.listWorktrees', (p, context) => this.listWorktrees(p, context))
-    this.dispatcher.onRequest('git.addWorktree', (p) => this.addWorktree(p))
+    this.dispatcher.onRequest('git.addWorktree', (p, context) => this.addWorktree(p, context))
+    this.dispatcher.onRequest('git.materializeWorktreeCheckout', (p, context) =>
+      this.materializeWorktreeCheckout(p, context)
+    )
     this.dispatcher.onRequest('git.removeWorktree', (p) => this.removeWorktree(p))
-    this.dispatcher.onRequest('git.worktreeIsClean', (p) => this.worktreeIsClean(p))
-    this.dispatcher.onRequest('git.refreshLocalBaseRefForWorktreeCreate', (p) =>
-      this.refreshLocalBaseRefForWorktreeCreate(p)
+    this.dispatcher.onRequest('git.worktreeIsClean', (p, context) =>
+      this.worktreeIsClean(p, context)
+    )
+    this.dispatcher.onRequest('git.refreshLocalBaseRefForWorktreeCreate', (p, context) =>
+      this.refreshLocalBaseRefForWorktreeCreate(p, context)
     )
     this.dispatcher.onRequest('git.renameCurrentBranch', (p) => this.renameCurrentBranch(p))
     this.dispatcher.onRequest('git.forceDeletePreservedBranch', (p) =>
@@ -1611,8 +1617,19 @@ export class GitHandler {
       .catch(() => [])
   }
 
-  private async addWorktree(params: Record<string, unknown>) {
-    return this.runWithGitReadCacheClear(() => addWorktreeOp(this.git.bind(this), params))
+  private async addWorktree(params: Record<string, unknown>, context?: RequestContext) {
+    return this.runWithGitReadCacheClear(() =>
+      addWorktreeOp(this.git.bind(this), params, { signal: context?.signal })
+    )
+  }
+
+  private async materializeWorktreeCheckout(
+    params: Record<string, unknown>,
+    context?: RequestContext
+  ) {
+    return this.runWithGitReadCacheClear(() =>
+      materializeWorktreeCheckoutOp(this.git.bind(this), params, { signal: context?.signal })
+    )
   }
 
   private async removeWorktree(params: Record<string, unknown>) {
@@ -1626,13 +1643,18 @@ export class GitHandler {
       : remove()
   }
 
-  private async worktreeIsClean(params: Record<string, unknown>) {
-    return worktreeIsCleanOp(this.git.bind(this), params)
+  private async worktreeIsClean(params: Record<string, unknown>, context: RequestContext) {
+    return worktreeIsCleanOp(this.git.bind(this), params, { signal: context.signal })
   }
 
-  private async refreshLocalBaseRefForWorktreeCreate(params: Record<string, unknown>) {
+  private async refreshLocalBaseRefForWorktreeCreate(
+    params: Record<string, unknown>,
+    context: RequestContext
+  ) {
     return this.runWithGitReadCacheClear(() =>
-      refreshLocalBaseRefForWorktreeCreateOp(this.git.bind(this), params, this.gitCapabilities)
+      refreshLocalBaseRefForWorktreeCreateOp(this.git.bind(this), params, this.gitCapabilities, {
+        signal: context.signal
+      })
     )
   }
 }

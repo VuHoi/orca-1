@@ -18,7 +18,10 @@ export type FullCreationExecutionInput = Pick<
   | 'prepareFullSubmit'
   | 'resolvedInitialWorkspaceStatus'
   | 'selectedRepoIsGit'
+  | 'selectedRepoIsRemote'
+  | 'selectedRepoSettings'
   | 'setSidebarOpen'
+  | 'settings'
   | 'sparseEnabled'
   | 'taskSourceContext'
   | 'telemetrySource'
@@ -35,6 +38,9 @@ import { createBrowserUuid } from '@/lib/browser-uuid'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
 import { seedNativeChatAppliedSessionOptions } from '@/components/native-chat/native-chat-session-option-cache'
 import { queueWorkspaceActivationTerminalFocus } from '@/lib/workspace-activation-terminal-focus'
+import { buildEarlyTerminalRendererDeliveryStartup } from '@/lib/worktree-creation-flow-startup'
+import { getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
+import { isWebClientLocation } from '@/lib/web-client-location'
 
 export function useFullCreationExecution(input: FullCreationExecutionInput) {
   const {
@@ -54,7 +60,10 @@ export function useFullCreationExecution(input: FullCreationExecutionInput) {
     prepareFullSubmit,
     resolvedInitialWorkspaceStatus,
     selectedRepoIsGit,
+    selectedRepoIsRemote,
+    selectedRepoSettings,
     setSidebarOpen,
+    settings,
     sparseEnabled,
     taskSourceContext,
     telemetrySource,
@@ -97,6 +106,22 @@ export function useFullCreationExecution(input: FullCreationExecutionInput) {
         composerTelemetry,
         backendStartup
       } = prepared
+
+      const startTerminalEarly =
+        selectedRepoIsGit &&
+        !isWebClientLocation() &&
+        !selectedRepoIsRemote &&
+        getActiveRuntimeTarget(selectedRepoSettings).kind === 'local' &&
+        settings?.experimentalEarlyWorktreeTerminal === true
+      const rendererDeliveryStartup =
+        startTerminalEarly && !backendStartup
+          ? buildEarlyTerminalRendererDeliveryStartup({
+              plan: startupPlan,
+              agent: tuiAgent,
+              telemetry: composerTelemetry
+            })
+          : undefined
+      const createStartup = backendStartup ?? rendererDeliveryStartup
 
       const startupPolicySettlement = await settleComposerSubmit(
         persistSetupAgentStartupPolicy(),
@@ -142,7 +167,7 @@ export function useFullCreationExecution(input: FullCreationExecutionInput) {
         resolvedInitialWorkspaceStatus,
         smartGitHubResolution.kind === 'none' ? (linkedGitLabMR ?? undefined) : undefined,
         smartGitHubResolution.kind === 'none' ? (linkedGitLabIssue ?? undefined) : undefined,
-        backendStartup,
+        createStartup,
         pendingFirstAgentMessageRename,
         undefined,
         linkedLinearIssueWorkspaceId,
@@ -158,6 +183,7 @@ export function useFullCreationExecution(input: FullCreationExecutionInput) {
           ...(!backendStartup && startupPlan?.draftPrompt
             ? { startupDraft: startupPlan.draftPrompt }
             : {}),
+          ...(startTerminalEarly ? { startTerminalEarly: true, focusEarlyTerminal: true } : {}),
           ...(parentWorktreeId ? { parentWorktreeId } : {})
         }
       )
@@ -179,6 +205,7 @@ export function useFullCreationExecution(input: FullCreationExecutionInput) {
           : undefined
 
       const backendSpawnedStartup = result.startupTerminal?.spawned === true
+      const backendOwnedStartup = Boolean(backendStartup && backendSpawnedStartup)
 
       if (startupPlan && !backendSpawnedStartup && !startupPlan.launchToken) {
         // Why: delayed delivery must target the exact pane from this queued startup, so both halves share one renderer-session token.
@@ -225,10 +252,12 @@ export function useFullCreationExecution(input: FullCreationExecutionInput) {
         }
       }
 
-      if (startupPlan && !backendSpawnedStartup) {
+      if (startupPlan && !backendOwnedStartup) {
         void ensureAgentStartupInTerminal({
           worktreeId: worktree.id,
-          primaryTabId: activation === false ? null : activation.primaryTabId,
+          primaryTabId:
+            result.startupTerminal?.tabId ??
+            (activation === false ? null : activation.primaryTabId),
           startup: startupPlan
         })
       }
@@ -260,7 +289,10 @@ export function useFullCreationExecution(input: FullCreationExecutionInput) {
       prepareFullSubmit,
       resolvedInitialWorkspaceStatus,
       selectedRepoIsGit,
+      selectedRepoIsRemote,
+      selectedRepoSettings,
       setSidebarOpen,
+      settings,
       sparseEnabled,
       taskSourceContext,
       telemetrySource,

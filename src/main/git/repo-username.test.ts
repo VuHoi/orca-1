@@ -23,7 +23,7 @@ import {
 function makeExecError(
   message: string,
   extra: {
-    code?: string
+    code?: string | number
     killed?: boolean
     signal?: string
     stdout?: string
@@ -64,6 +64,7 @@ describe('resolveLocalGitUsername', () => {
   let originRemoteUrl: string | undefined
   let remoteUrls: Record<string, string>
   let currentBranch: string
+  let failNextGitArgs: ((args: string[]) => boolean) | null
 
   beforeEach(() => {
     vi.resetAllMocks()
@@ -72,14 +73,19 @@ describe('resolveLocalGitUsername', () => {
     originRemoteUrl = undefined
     remoteUrls = {}
     currentBranch = ''
+    failNextGitArgs = null
 
     gitExecFileAsyncMock.mockImplementation(async (args: string[]) => {
+      if (failNextGitArgs?.(args)) {
+        failNextGitArgs = null
+        throw makeExecError('git timeout', { code: 'ETIMEDOUT' })
+      }
       if (args[0] === 'config' && args[1] === '--get') {
         const value = gitConfig[args[2]]
         if (value !== undefined) {
           return { stdout: `${value}\n`, stderr: '' }
         }
-        throw makeExecError(`missing config ${args[2]}`)
+        throw makeExecError(`missing config ${args[2]}`, { code: 1 })
       }
       if (args[0] === 'remote' && args.length === 1) {
         const remotes = new Set(Object.keys(remoteUrls))
@@ -93,17 +99,17 @@ describe('resolveLocalGitUsername', () => {
         if (remoteUrl) {
           return { stdout: `${remoteUrl}\n`, stderr: '' }
         }
-        throw makeExecError(`missing ${args[2]} remote`)
+        throw makeExecError(`missing ${args[2]} remote`, { code: 2 })
       }
       if (args[0] === 'branch' && args[1] === '--show-current') {
         return { stdout: `${currentBranch}\n`, stderr: '' }
       }
       if (args[0] === 'symbolic-ref') {
         // origin/HEAD unset — resolveDefaultBaseRefViaExec falls through to probes.
-        throw makeExecError('no origin/HEAD')
+        throw makeExecError('no origin/HEAD', { code: 1 })
       }
       if (args[0] === 'rev-parse') {
-        throw makeExecError(`missing ref ${args.at(-1)}`)
+        throw makeExecError(`missing ref ${args.at(-1)}`, { code: 1 })
       }
       throw makeExecError(`unexpected git args: ${args.join(' ')}`)
     })
@@ -120,6 +126,94 @@ describe('resolveLocalGitUsername', () => {
 
     await expect(resolveLocalGitUsername('/repo')).resolves.toBe('config-demo')
     expect(ghExecFileAsyncMock).not.toHaveBeenCalled()
+  })
+
+  it('resolves completed config probes fresh', async () => {
+    gitConfig['github.user'] = 'alice'
+
+    await expect(resolveLocalGitUsername('/repo')).resolves.toBe('alice')
+    gitConfig['github.user'] = 'bob'
+    await expect(resolveLocalGitUsername('/repo')).resolves.toBe('bob')
+
+    expect(gitExecFileAsyncMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('coalesces concurrent complete resolutions per repo', async () => {
+    let release: ((value: { stdout: string; stderr: string }) => void) | undefined
+    gitExecFileAsyncMock.mockImplementationOnce(
+      () =>
+        new Promise<{ stdout: string; stderr: string }>((resolve) => {
+          release = resolve
+        })
+    )
+
+    const first = resolveLocalGitUsername('/repo')
+    const second = resolveLocalGitUsername('/repo')
+    expect(gitExecFileAsyncMock).toHaveBeenCalledTimes(1)
+
+    release?.({ stdout: 'config-demo\n', stderr: '' })
+    await expect(Promise.all([first, second])).resolves.toEqual(['config-demo', 'config-demo'])
+    expect(gitExecFileAsyncMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('resolves completed remote probes fresh', async () => {
+    originRemoteUrl = 'https://github.com/stablyai/orca.git'
+    ghExecFileAsyncMock.mockResolvedValue({ stdout: 'gh-demo\n', stderr: '' })
+
+    await expect(resolveLocalGitUsername('/repo')).resolves.toBe('gh-demo')
+    originRemoteUrl = 'https://gitlab.com/stablyai/orca.git'
+    await expect(resolveLocalGitUsername('/repo')).resolves.toBe('')
+
+    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('resolves completed current-branch probes fresh', async () => {
+    currentBranch = 'main'
+    gitConfig['branch.main.remote'] = 'github'
+    gitConfig['branch.topic.remote'] = 'gitlab'
+    remoteUrls.github = 'https://github.com/stablyai/orca.git'
+    remoteUrls.gitlab = 'https://gitlab.com/stablyai/orca.git'
+    ghExecFileAsyncMock.mockResolvedValue({ stdout: 'gh-demo\n', stderr: '' })
+
+    await expect(resolveLocalGitUsername('/repo')).resolves.toBe('gh-demo')
+    currentBranch = 'topic'
+    await expect(resolveLocalGitUsername('/repo')).resolves.toBe('')
+
+    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a one-shot config failure without reusing its result', async () => {
+    gitConfig['github.user'] = 'alice'
+    failNextGitArgs = (args) => args[0] === 'config' && args[2] === 'github.user'
+
+    await expect(resolveLocalGitUsernameDetailed('/repo')).resolves.toEqual({
+      username: '',
+      authoritative: false
+    })
+    await expect(resolveLocalGitUsernameDetailed('/repo')).resolves.toEqual({
+      username: 'alice',
+      authoritative: true
+    })
+  })
+
+  it.each([
+    ['remote list', (args: string[]) => args[0] === 'remote' && args.length === 1],
+    ['remote URL', (args: string[]) => args[0] === 'remote' && args[1] === 'get-url'],
+    ['default ref', (args: string[]) => args[0] === 'symbolic-ref'],
+    ['current branch', (args: string[]) => args[0] === 'branch']
+  ])('retries a one-shot %s failure without reusing its result', async (_label, matches) => {
+    originRemoteUrl = 'https://github.com/stablyai/orca.git'
+    ghExecFileAsyncMock.mockResolvedValue({ stdout: 'gh-demo\n', stderr: '' })
+    failNextGitArgs = matches
+
+    await expect(resolveLocalGitUsernameDetailed('/repo')).resolves.toEqual({
+      username: '',
+      authoritative: false
+    })
+    await expect(resolveLocalGitUsernameDetailed('/repo')).resolves.toEqual({
+      username: 'gh-demo',
+      authoritative: true
+    })
   })
 
   it('uses explicit username config before checking GitHub CLI login', async () => {

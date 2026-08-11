@@ -51,10 +51,14 @@ export function ExperimentalPane({
   const showAgentHibernation = matchesSettingsSearch(searchQuery, [
     getExperimentalSearchEntry().agentHibernation
   ])
+  const showEarlyWorktreeTerminal = matchesSettingsSearch(searchQuery, [
+    getExperimentalSearchEntry().earlyWorktreeTerminal
+  ])
   const showNewWorktreeCardStyle = matchesSettingsSearch(searchQuery, [
     getExperimentalSearchEntry().newWorktreeCardStyle
   ])
   const agentHibernationEnabled = settings.experimentalAgentHibernation === true
+  const earlyWorktreeTerminalEnabled = settings.experimentalEarlyWorktreeTerminal === true
   const newWorktreeCardStyleEnabled = settings.experimentalNewWorktreeCardStyle === true
   // Why: the planner owns ms-based bounds/defaults; the UI edits minutes
   // while displaying the same effective clamped value the planner will use.
@@ -256,6 +260,51 @@ export function ExperimentalPane({
               }
             />
           ) : null}
+        </SearchableSetting>
+      ) : null}
+
+      {showEarlyWorktreeTerminal ? (
+        <SearchableSetting
+          title={translate(
+            'auto.components.settings.ExperimentalPane.earlyWorktreeTerminal.title',
+            'Early worktree terminal'
+          )}
+          description={translate(
+            'auto.components.settings.ExperimentalPane.earlyWorktreeTerminal.description',
+            'Prepare the first terminal while a supported local Git worktree finishes checkout.'
+          )}
+          keywords={getExperimentalSearchEntry().earlyWorktreeTerminal.keywords}
+          className="space-y-3 py-2"
+          id="experimental-early-worktree-terminal"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 shrink space-y-0.5">
+              <Label>
+                {translate(
+                  'auto.components.settings.ExperimentalPane.earlyWorktreeTerminal.title',
+                  'Early worktree terminal'
+                )}
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                {translate(
+                  'auto.components.settings.ExperimentalPane.earlyWorktreeTerminal.copy',
+                  'Lets supported local worktree creates prepare the first terminal during checkout. Shell input, setup, and agents still wait for the worktree to be ready. Remote runtimes use the standard creation flow.'
+                )}
+              </p>
+            </div>
+            <SettingsSwitch
+              checked={earlyWorktreeTerminalEnabled}
+              ariaLabel={translate(
+                'auto.components.settings.ExperimentalPane.earlyWorktreeTerminal.toggleLabel',
+                'Toggle early worktree terminal'
+              )}
+              onChange={() =>
+                updateSettings({
+                  experimentalEarlyWorktreeTerminal: !earlyWorktreeTerminalEnabled
+                })
+              }
+            />
+          </div>
         </SearchableSetting>
       ) : null}
 

@@ -12,5 +12,6 @@ export type WorktreeIpcContext = {
     onWorktreeLifecycle?: (event: RuntimeWorktreeLifecycleEvent) => void
   }
   detectedWorktreeCancellations: SenderScopedRequestCancellations
+  worktreeCreateCancellations: SenderScopedRequestCancellations
   worktreeRemovalsInFlight: Map<string, WorktreeRemovalInFlight>
 }

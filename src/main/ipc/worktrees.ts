@@ -29,6 +29,7 @@ const WORKTREE_HANDLER_CHANNELS = [
   'worktrees:forgetRemovedForExecutionHost',
   'worktrees:cancelListDetected',
   'worktrees:create',
+  'worktrees:cancelCreate',
   'worktrees:adoptProvisionedRoot',
   'worktrees:prefetchCreateBase',
   'worktrees:resolvePrBase',
@@ -61,6 +62,7 @@ export function registerWorktreeHandlers(
     runtime,
     ...(options ? { options } : {}),
     detectedWorktreeCancellations: createSenderScopedRequestCancellations(),
+    worktreeCreateCancellations: createSenderScopedRequestCancellations(),
     worktreeRemovalsInFlight: new Map()
   }
 

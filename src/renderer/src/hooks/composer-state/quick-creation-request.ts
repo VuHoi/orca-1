@@ -39,6 +39,8 @@ export type QuickCreationRequestInput = {
   linkedGitLabIssue: number | null
   includeGitLabLinks: boolean
   startup: WorktreeCreationRequest['startup']
+  startTerminalEarly?: boolean
+  focusEarlyTerminal?: boolean
   issueCommand: WorktreeCreationRequest['issueCommand']
   pendingFirstAgentMessageRename: boolean
   note: string
@@ -98,6 +100,9 @@ export function buildQuickCreationRequest(
       ? { linkedGitLabIssue: input.linkedGitLabIssue }
       : {}),
     ...(input.startup ? { startup: input.startup } : {}),
+    ...(input.startTerminalEarly
+      ? { startTerminalEarly: true, focusEarlyTerminal: input.focusEarlyTerminal !== false }
+      : {}),
     ...(input.issueCommand ? { issueCommand: input.issueCommand } : {}),
     pendingFirstAgentMessageRename: input.pendingFirstAgentMessageRename,
     note: input.note,

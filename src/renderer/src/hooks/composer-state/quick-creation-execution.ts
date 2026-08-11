@@ -225,6 +225,9 @@ export function useQuickCreationExecution(input: QuickCreationExecutionInput) {
         linkedGitLabIssue,
         includeGitLabLinks: smartGitHubResolution.kind === 'none',
         startup: backendStartup,
+        startTerminalEarly:
+          selectedRepoIsGit && settings?.experimentalEarlyWorktreeTerminal === true,
+        focusEarlyTerminal: !createMultiple,
         issueCommand,
         pendingFirstAgentMessageRename,
         note: trimmedNote,

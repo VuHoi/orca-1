@@ -151,6 +151,26 @@ describeBinaryCompatibility('real Git binary compatibility', () => {
     await rm(join(repoPath, 'deferred-trash'), { recursive: true, force: true })
   })
 
+  it('materializes a worktree created without checkout', async () => {
+    const worktreeDirectory = 'two-phase-wt'
+    const worktreePath = join(repoPath, worktreeDirectory)
+    await runGit([
+      'worktree',
+      'add',
+      '--no-checkout',
+      '-b',
+      'compat-two-phase',
+      worktreeDirectory,
+      'HEAD'
+    ])
+    await expect(readFile(join(worktreePath, 'tracked.txt'), 'utf8')).rejects.toThrow()
+
+    await runGit(['-C', worktreeDirectory, 'checkout', '--force', 'compat-two-phase'])
+    await expect(readFile(join(worktreePath, 'tracked.txt'), 'utf8')).resolves.toBe(
+      'compatibility\n'
+    )
+  })
+
   it('recognizes ref and merge-tree compatibility boundaries', async () => {
     const fetchHeadPath = join(repoPath, '.git', 'FETCH_HEAD')
     await writeFile(fetchHeadPath, 'sentinel\n')

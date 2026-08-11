@@ -35,6 +35,7 @@ const COMPOSER_SOURCE = {
   projectTarget: readComposerModule('project-target-actions.ts'),
   providerRuntime: readComposerModule('provider-runtime-sync.ts'),
   quickCreation: readComposerModule('quick-creation-execution.ts'),
+  quickCreationRequest: readComposerModule('quick-creation-request.ts'),
   quickSubmitAction: readComposerModule('quick-submit-action.ts'),
   quickSubmitPreparation: readComposerModule('quick-submit-preparation.ts'),
   quickSubmitSourcePreparation: readComposerModule('quick-submit-source-preparation.ts'),
@@ -768,5 +769,21 @@ describe('useComposerState host-context boundaries', () => {
     expect(cardPropsSection).toContain('!ephemeralVmsEnabled')
     expect(cardPropsSection).toContain('selectedEphemeralVmRecipeId:')
     expect(cardPropsSection).toContain('ephemeralVmRecipeError:')
+  })
+
+  it('captures the early-terminal experiment only for Git worktree creates', () => {
+    expect(COMPOSER_SOURCE.fullCreation).toContain(
+      'settings?.experimentalEarlyWorktreeTerminal === true'
+    )
+    expect(COMPOSER_SOURCE.fullCreation).toContain('startTerminalEarly: true')
+    expect(COMPOSER_SOURCE.fullCreation).toContain('buildEarlyTerminalRendererDeliveryStartup')
+    expect(COMPOSER_SOURCE.fullCreation).toContain('selectedRepoIsGit &&')
+    expect(COMPOSER_SOURCE.quickCreation).toContain(
+      'selectedRepoIsGit && settings?.experimentalEarlyWorktreeTerminal === true'
+    )
+    expect(COMPOSER_SOURCE.quickCreation).toContain('focusEarlyTerminal: !createMultiple')
+    expect(COMPOSER_SOURCE.quickCreationRequest).toContain(
+      '{ startTerminalEarly: true, focusEarlyTerminal: input.focusEarlyTerminal !== false }'
+    )
   })
 })

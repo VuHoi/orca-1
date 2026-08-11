@@ -210,10 +210,10 @@ describe('registerWorktreeHandlers', () => {
           return { stdout: 'refs/remotes/origin/feature/something\n', stderr: '' }
         }
         if (args[0] === 'rev-parse' && args.includes('refs/heads/feature/something^{commit}')) {
-          throw new Error('missing local branch')
+          throw Object.assign(new Error('missing local branch'), { code: 1 })
         }
         if (args[0] === 'rev-parse' && args.includes('refs/heads/feature/something-2^{commit}')) {
-          throw new Error('missing local branch')
+          throw Object.assign(new Error('missing local branch'), { code: 1 })
         }
         return { stdout: '', stderr: '' }
       }),
@@ -251,6 +251,16 @@ describe('registerWorktreeHandlers', () => {
       '/remote/repo-feature-something-2',
       { base: 'origin/main' }
     )
+    expect(
+      provider.exec.mock.calls.filter(([gitArgs]) =>
+        gitArgs.includes('refs/heads/feature/something^{commit}')
+      )
+    ).toHaveLength(1)
+    expect(
+      provider.exec.mock.calls.filter(([gitArgs]) =>
+        gitArgs.includes('refs/heads/feature/something-2^{commit}')
+      )
+    ).toHaveLength(1)
   })
 
   it('suffixes SSH worktree creation when a slashed remote owns the requested branch', async () => {

@@ -126,6 +126,41 @@ describe('worktree remote runtime mutations', () => {
     )
   })
 
+  it('omits the local-only early-terminal opt-in from paired-runtime create RPC', async () => {
+    const store = createTestStore()
+    const wt = makeWorktree({
+      id: 'repo1::/path/feature',
+      repoId: 'repo1',
+      path: '/path/feature'
+    })
+    runtimeEnvironmentCall.mockResolvedValue({
+      id: 'rpc-create',
+      ok: true,
+      result: { worktree: wt },
+      _meta: { runtimeId: 'runtime-remote' }
+    })
+    store.setState({
+      settings: { activeRuntimeEnvironmentId: 'env-1' } as never,
+      worktreesByRepo: { repo1: [] }
+    } as Partial<AppState>)
+    const createWorktree = store.getState().createWorktree
+    const args: Parameters<typeof createWorktree> = ['repo1', 'feature']
+    args[25] = { startTerminalEarly: true, focusEarlyTerminal: false }
+
+    await createWorktree(...args)
+
+    expect(runtimeEnvironmentCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'worktree.create',
+        params: expect.not.objectContaining({
+          startTerminalEarly: expect.anything(),
+          focusEarlyTerminal: expect.anything()
+        })
+      })
+    )
+    expect(mockApi.worktrees.create).not.toHaveBeenCalled()
+  })
+
   it('persists Jira item and source context through paired-runtime create', async () => {
     const store = createTestStore()
     const wt = makeWorktree({

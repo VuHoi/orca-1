@@ -1,10 +1,66 @@
 import { useAppStore } from '@/store'
 import { getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import type { WorktreeStartupPayload } from '@/lib/worktree-startup-payload'
+import { createBrowserUuid } from '@/lib/browser-uuid'
+import type { AgentStartupPlan } from '@/lib/tui-agent-startup'
 import type {
   WorktreeCreationPhase,
   WorktreeCreationRequest
 } from '@/lib/pending-worktree-creation'
+import type { TuiAgent } from '../../../shared/tui-agent'
+import type { WorktreeStartupLaunch } from '../../../shared/worktree/launch-types'
+import { resolveBackendDraftStartup } from '@/lib/worktree-draft-startup-view-mode'
+import { isWebClientLocation } from '@/lib/web-client-location'
+
+export function buildEarlyTerminalRendererDeliveryStartup(args: {
+  plan: AgentStartupPlan | null
+  agent: TuiAgent | null
+  telemetry: WorktreeStartupLaunch['telemetry'] | null
+}): WorktreeStartupLaunch | undefined {
+  const { plan, agent, telemetry } = args
+  if (!plan) {
+    return undefined
+  }
+  const launchToken = plan.launchToken ?? createBrowserUuid()
+  plan.launchToken = launchToken
+  return {
+    command: plan.launchCommand,
+    ...(plan.env ? { env: plan.env } : {}),
+    launchConfig: plan.launchConfig,
+    launchToken,
+    ...(agent ? { launchAgent: agent } : {}),
+    ...(plan.startupCommandDelivery ? { startupCommandDelivery: plan.startupCommandDelivery } : {}),
+    ...(telemetry ? { telemetry } : {})
+  }
+}
+
+export function resolveWorktreeCreationStartups(request: WorktreeCreationRequest): {
+  backendStartup: WorktreeStartupLaunch | undefined
+  createStartup: WorktreeStartupLaunch | undefined
+} {
+  const backendStartup = resolveBackendDraftStartup(request)
+  const canStartEarly =
+    request.startTerminalEarly === true &&
+    !isWebClientLocation() &&
+    (request.workspaceRunContext?.hostId ?? 'local') === 'local' &&
+    !getWorktreeCreationIndeterminate(request)
+  const rendererDeliveryStartup =
+    canStartEarly && !backendStartup
+      ? buildEarlyTerminalRendererDeliveryStartup({
+          plan: request.startupPlan,
+          agent: request.agent,
+          telemetry: request.quickTelemetry
+        })
+      : undefined
+  return { backendStartup, createStartup: backendStartup ?? rendererDeliveryStartup }
+}
+
+export function isBackendOwnedWorktreeCreationStartup(
+  backendStartup: WorktreeStartupLaunch | undefined,
+  backendSpawned: boolean
+): boolean {
+  return Boolean(backendStartup && backendSpawned)
+}
 
 // Why: mirrors the startup-opt the composer used to build inline. The renderer
 // only seeds the first terminal when the backend did not already spawn it.

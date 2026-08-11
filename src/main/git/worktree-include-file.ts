@@ -78,6 +78,9 @@ export async function resolveWorktreeIncludePaths(
   options: GitRuntimeOptions = {}
 ): Promise<string[]> {
   try {
+    if (options.signal?.aborted) {
+      return []
+    }
     const content = await readWorktreeIncludeFile(repoPath)
     if (content === null) {
       return []
@@ -85,6 +88,9 @@ export async function resolveWorktreeIncludePaths(
 
     const candidates: string[] = []
     for (const entry of parseWorktreeIncludeFile(content)) {
+      if (options.signal?.aborted) {
+        return []
+      }
       if (candidates.length >= WORKTREE_INCLUDE_MAX_ENTRIES) {
         console.warn(
           `[worktree-include] ${WORKTREE_INCLUDE_FILE} lists more than ${WORKTREE_INCLUDE_MAX_ENTRIES} entries; ignoring the rest`
@@ -112,6 +118,9 @@ export async function resolveWorktreeIncludePaths(
     // path (e.g. node_modules before install) has nothing to copy.
     const existing: string[] = []
     for (const relativePath of candidates) {
+      if (options.signal?.aborted) {
+        return []
+      }
       try {
         await lstat(join(repoPath, relativePath))
         existing.push(relativePath)
@@ -120,6 +129,10 @@ export async function resolveWorktreeIncludePaths(
       }
     }
     if (existing.length === 0) {
+      return []
+    }
+
+    if (options.signal?.aborted) {
       return []
     }
 

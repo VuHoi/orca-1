@@ -18,6 +18,7 @@ const STALE_DAEMON_CWD_MARKERS = [
 ]
 // Thrown by ipc/pty.ts when a persisted pane owner can't be proven alive or dead (STA-3536).
 const PANE_OWNER_UNVERIFIED_MARKER = 'terminal_pane_owner_unverified'
+const WORKTREE_CHECKOUT_IN_PROGRESS_MARKER = 'worktree_checkout_in_progress'
 // Why one source: the test and replace forms must match the same token, and a lone /g regex carries
 // lastIndex state across .test() calls. Capture the leading boundary so replacement can restore it.
 const TERMINAL_HOST_GONE_SOURCE = '(^|[^a-z0-9_])terminal_host_gone(?=$|[^a-z0-9_])'
@@ -73,6 +74,7 @@ export function isExplainedTerminalError(error: string): boolean {
     .split('\n')
     .some(
       (line) =>
+        line.includes(WORKTREE_CHECKOUT_IN_PROGRESS_MARKER) ||
         TERMINAL_HOST_GONE_PATTERN.test(line) ||
         LEGACY_TERMINAL_HOST_GONE_PATTERN.test(line) ||
         UNREATTACHABLE_SESSION_PATTERNS.some((pattern) => pattern.test(line))
@@ -94,6 +96,15 @@ function humanizeUnreattachableSession(error: string): string {
 /** Swaps raw daemon-boundary codes for copy a user can act on. */
 export function humanizeTerminalError(error: string): string {
   let humanized = error
+  if (humanized.includes(WORKTREE_CHECKOUT_IN_PROGRESS_MARKER)) {
+    humanized = humanized.replace(
+      WORKTREE_CHECKOUT_IN_PROGRESS_MARKER,
+      translate(
+        'auto.components.terminal.pane.TerminalErrorToast.0e30340156',
+        'This workspace is still being prepared. New terminals will be available when it is ready.'
+      )
+    )
+  }
   if (humanized.includes(PANE_OWNER_UNVERIFIED_MARKER)) {
     humanized = humanized.replace(
       PANE_OWNER_UNVERIFIED_MARKER,

@@ -70,6 +70,9 @@ export async function resolveWorktreeSharedDirectories(
   options: GitRuntimeOptions = {}
 ): Promise<string[]> {
   try {
+    if (options.signal?.aborted) {
+      return []
+    }
     const configured = loadHooks(repoPath)?.worktree?.sharedDirectories ?? []
     if (configured.length === 0) {
       return []
@@ -79,6 +82,9 @@ export async function resolveWorktreeSharedDirectories(
     // (node_modules before install) has nothing to share.
     const existing: string[] = []
     for (const relativePath of configured) {
+      if (options.signal?.aborted) {
+        return []
+      }
       try {
         if ((await stat(join(repoPath, relativePath))).isDirectory()) {
           existing.push(relativePath)
@@ -92,6 +98,10 @@ export async function resolveWorktreeSharedDirectories(
       }
     }
     if (existing.length === 0) {
+      return []
+    }
+
+    if (options.signal?.aborted) {
       return []
     }
 

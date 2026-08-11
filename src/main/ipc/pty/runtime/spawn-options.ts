@@ -56,12 +56,12 @@ export async function buildRuntimePtySpawnOptions(
     }
   }
   let ptySpawnCommitReported = false
-  ctx.reportPtySpawnCommitted = (): void => {
+  ctx.reportPtySpawnCommitted = (ptyId?: string): void => {
     if (ptySpawnCommitReported) {
       return
     }
     ptySpawnCommitReported = true
-    args.onPtySpawnCommitted?.()
+    args.onPtySpawnCommitted?.(ptyId)
   }
   ctx.spawnOptions.envToDelete = mergePtyEnvDeletions(
     authEnvToDelete,

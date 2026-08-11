@@ -175,7 +175,14 @@ export async function buildPtyIpcSpawnOptions(
   const runtime = ctx.deps.runtime
   const acquireWorktreeSpawn = runtime?.acquireWorktreeTerminalSpawn
   ctx.releaseWorktreeSpawn = acquireWorktreeSpawn
-    ? await acquireWorktreeSpawn.call(runtime, args.worktreeId)
+    ? await acquireWorktreeSpawn.call(
+        runtime,
+        args.worktreeId,
+        undefined,
+        ctx.cwd,
+        ctx.preAdoptedStablePane?.result.id,
+        args.connectionId ?? null
+      )
     : undefined
   return null
 }

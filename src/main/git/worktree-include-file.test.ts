@@ -65,6 +65,18 @@ describe('resolveWorktreeIncludePaths', () => {
     expect(gitExecFileAsyncMock).not.toHaveBeenCalled()
   })
 
+  it('stops before discovery when speculative work is cancelled', async () => {
+    writeInclude('.env\n')
+    writeFileSync(join(repo, '.env'), 'A=1')
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(resolveWorktreeIncludePaths(repo, { signal: controller.signal })).resolves.toEqual(
+      []
+    )
+    expect(gitExecFileAsyncMock).not.toHaveBeenCalled()
+  })
+
   it('resolves existing gitignored literal files and directories', async () => {
     writeInclude('.env\nconfig/secrets.json\n.vscode/\nmissing.txt\n')
     writeFileSync(join(repo, '.env'), 'A=1')

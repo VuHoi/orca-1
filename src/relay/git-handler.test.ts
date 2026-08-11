@@ -70,6 +70,7 @@ describe('GitHandler', () => {
     expect(methods).toContain('git.branchDiff')
     expect(methods).toContain('git.listWorktrees')
     expect(methods).toContain('git.addWorktree')
+    expect(methods).toContain('git.materializeWorktreeCheckout')
     expect(methods).toContain('git.removeWorktree')
     expect(methods).toContain('git.worktreeIsClean')
     expect(methods).toContain('git.refreshLocalBaseRefForWorktreeCreate')

@@ -4,6 +4,6 @@ export function isWebClientLocation(): boolean {
   }
   return (
     Boolean((window as unknown as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__) ||
-    window.location.pathname.endsWith('/web-index.html')
+    window.location?.pathname?.endsWith('/web-index.html') === true
   )
 }

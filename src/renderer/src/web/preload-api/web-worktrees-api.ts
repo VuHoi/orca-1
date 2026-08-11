@@ -97,6 +97,8 @@ export function createWorktreesApi(): NonNullable<Partial<PreloadApi>['worktrees
         worktree: withRuntimeWorktreeOwner(owned.result.worktree, owned.hostId)
       }
     },
+    // Early-create cancellation is desktop-local and intentionally absent from paired-runtime RPC.
+    cancelCreate: async () => ({ cancelled: false }),
     // Why: adoption verifies a desktop-owned hidden SSH target and is intentionally not a remote-server operation.
     adoptProvisionedRoot: () =>
       Promise.reject(

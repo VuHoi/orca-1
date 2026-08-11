@@ -96,6 +96,8 @@ docs/**
 !docs/assets/**
 !docs/readme/
 !docs/readme/**
+!docs/reports/
+!docs/reports/**
 !docs/STYLEGUIDE.md
 !docs/agent-skill-sharing-implementation-checklist.md
 !docs/mobile-terminal-shortcut-bar.md

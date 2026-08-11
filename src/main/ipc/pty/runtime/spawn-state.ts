@@ -77,7 +77,7 @@ export type RuntimePtySpawnState = {
   snapshotKittyFlagsCoverReconciledSeq: boolean
   preparedProvisionalExecutionContext: boolean
   releaseWorktreeSpawn: (() => void) | undefined
-  reportPtySpawnCommitted: () => void
+  reportPtySpawnCommitted: (ptyId?: string) => void
 }
 
 export type RuntimePtySpawnArgs = {
@@ -98,6 +98,7 @@ export type RuntimePtySpawnArgs = {
   resumeProviderSession?: AgentProviderSessionMetadata
   connectionId?: string | null
   worktreeId?: string
+  worktreeTerminalCreationPermit?: symbol
   preAllocatedHandle?: string
   tabId?: string
   leafId?: string
@@ -112,7 +113,7 @@ export type RuntimePtySpawnArgs = {
   }
   agentSessionCreateOperationId?: string
   signal?: AbortSignal
-  onPtySpawnCommitted?: () => void
+  onPtySpawnCommitted?: (ptyId?: string) => void
   adoptedStablePane?: {
     result: PtySpawnResult
     owner: {

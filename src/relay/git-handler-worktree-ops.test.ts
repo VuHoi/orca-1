@@ -1,8 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
 import * as path from 'node:path'
 import { GitCapabilityCache } from '../shared/git-capability-cache'
+import {
+  WORKTREE_ADD_TIMEOUT_MS,
+  WORKTREE_CREATE_AUXILIARY_GIT_TIMEOUT_MS,
+  WORKTREE_MATERIALIZATION_TIMEOUT_MS
+} from '../shared/worktree-create-timeouts'
 import type { GitExec } from './git-handler-ops'
-import { addWorktreeOp, removeWorktreeOp } from './git-handler-worktree-ops'
+import {
+  addWorktreeOp,
+  materializeWorktreeCheckoutOp,
+  removeWorktreeOp
+} from './git-handler-worktree-ops'
 
 function removeWorktreeWithCapabilityCache(
   git: GitExec,
@@ -39,6 +48,7 @@ describe('addWorktreeOp', () => {
         targetDir: '/repo-feature',
         base: 'origin/main'
       },
+      {},
       'linux'
     )
 
@@ -88,6 +98,7 @@ describe('addWorktreeOp', () => {
         base: 'origin/main',
         checkoutExistingBranch: true
       },
+      {},
       'linux'
     )
 
@@ -106,6 +117,7 @@ describe('addWorktreeOp', () => {
         branchName: 'feature/no-base',
         targetDir: '/repo-feature'
       },
+      {},
       'linux'
     )
 
@@ -128,6 +140,7 @@ describe('addWorktreeOp', () => {
         targetDir: 'C:\\repo-feature',
         checkoutExistingBranch: true
       },
+      {},
       'win32'
     )
 
@@ -147,6 +160,7 @@ describe('addWorktreeOp', () => {
         targetDir: 'C:\\repo-feature',
         noCheckout: true
       },
+      {},
       'win32'
     )
 
@@ -174,6 +188,7 @@ describe('addWorktreeOp', () => {
         targetDir: '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo-feature',
         checkoutExistingBranch: true
       },
+      {},
       'win32'
     )
 
@@ -183,6 +198,99 @@ describe('addWorktreeOp', () => {
       '\\\\wsl.localhost\\Ubuntu\\home\\dev\\repo-feature',
       'feature/test'
     ])
+  })
+
+  it('bounds checkout without overriding workers and forwards cancellation', async () => {
+    const controller = new AbortController()
+    const git = vi.fn<GitExec>(async () => ({ stdout: '', stderr: '' }))
+
+    await addWorktreeOp(
+      git,
+      {
+        repoPath: '/repo',
+        branchName: 'feature/test',
+        targetDir: '/repo-feature',
+        checkoutExistingBranch: true
+      },
+      { signal: controller.signal }
+    )
+
+    expect(git).toHaveBeenCalledWith(
+      ['worktree', 'add', '/repo-feature', 'feature/test'],
+      '/repo',
+      { signal: controller.signal, timeout: WORKTREE_ADD_TIMEOUT_MS }
+    )
+  })
+
+  it.each([
+    ['an aborted request', Object.assign(new Error('canceled'), { name: 'Error' }), true],
+    ['an AbortError', Object.assign(new Error('canceled'), { name: 'AbortError' }), false],
+    ['a timed-out probe', Object.assign(new Error('timed out'), { killed: true }), false]
+  ])('does not downgrade %s to a missing base ref', async (_label, rejection, abortSignal) => {
+    const controller = new AbortController()
+    if (abortSignal) {
+      controller.abort()
+    }
+    const git = vi.fn<GitExec>(async () => {
+      throw rejection
+    })
+
+    await expect(
+      addWorktreeOp(
+        git,
+        {
+          repoPath: '/repo',
+          branchName: 'feature/test',
+          targetDir: '/repo-feature',
+          base: 'origin/main'
+        },
+        { signal: controller.signal }
+      )
+    ).rejects.toBe(rejection)
+    expect(git).toHaveBeenCalledTimes(1)
+  })
+
+  it('bounds every prep and config command within the transport budget', async () => {
+    const controller = new AbortController()
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const git = vi.fn<GitExec>(async (args) => {
+      if (args[0] === 'rev-parse' && args[3]?.startsWith('refs/remotes/')) {
+        throw new Error('missing remote ref')
+      }
+      if (args[0] === 'config' && args[2] === '--replace-all') {
+        throw new Error('config locked')
+      }
+      if (args[0] === 'config' && args[1] === '--get') {
+        throw Object.assign(new Error('unset'), { code: 1 })
+      }
+      return { stdout: '', stderr: '' }
+    })
+
+    await addWorktreeOp(
+      git,
+      {
+        repoPath: '/repo',
+        branchName: 'feature/test',
+        targetDir: '/repo-feature',
+        base: 'release/main'
+      },
+      { signal: controller.signal }
+    )
+
+    const auxiliaryOptions = {
+      signal: controller.signal,
+      timeout: WORKTREE_CREATE_AUXILIARY_GIT_TIMEOUT_MS
+    }
+    expect(git.mock.calls.map((call) => call[2])).toEqual([
+      auxiliaryOptions,
+      auxiliaryOptions,
+      { signal: controller.signal, timeout: WORKTREE_ADD_TIMEOUT_MS },
+      auxiliaryOptions,
+      auxiliaryOptions,
+      auxiliaryOptions,
+      auxiliaryOptions
+    ])
+    warnSpy.mockRestore()
   })
 
   it('warns and unsets stale branch base config when SSH base persistence fails', async () => {
@@ -203,6 +311,7 @@ describe('addWorktreeOp', () => {
           targetDir: '/repo-feature',
           base: 'origin/main'
         },
+        {},
         'linux'
       )
     ).resolves.toBeUndefined()
@@ -218,6 +327,37 @@ describe('addWorktreeOp', () => {
       'branch.feature/test.base'
     ])
     warnSpy.mockRestore()
+  })
+})
+
+describe('materializeWorktreeCheckoutOp', () => {
+  it('preserves checkout workers and uses force, cancellation, and timeouts', async () => {
+    const controller = new AbortController()
+    const git = vi.fn<GitExec>(async () => ({ stdout: '', stderr: '' }))
+
+    await materializeWorktreeCheckoutOp(
+      git,
+      {
+        worktreePath: '/repo-feature',
+        branchName: 'feature/test',
+        sparseDirectories: ['apps/web', 'packages/shared']
+      },
+      { signal: controller.signal }
+    )
+
+    const execOptions = {
+      signal: controller.signal,
+      timeout: WORKTREE_MATERIALIZATION_TIMEOUT_MS
+    }
+    expect(git.mock.calls).toEqual([
+      [['sparse-checkout', 'init', '--cone'], '/repo-feature', execOptions],
+      [
+        ['sparse-checkout', 'set', '--', 'apps/web', 'packages/shared'],
+        '/repo-feature',
+        execOptions
+      ],
+      [['checkout', '--force', 'feature/test'], '/repo-feature', execOptions]
+    ])
   })
 })
 

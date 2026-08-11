@@ -8,6 +8,10 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { writeFileSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
+import {
+  WORKTREE_CREATE_AUXILIARY_GIT_TIMEOUT_MS,
+  WORKTREE_MATERIALIZATION_TIMEOUT_MS
+} from '../shared/worktree-create-timeouts'
 import { GitHandler } from './git-handler'
 import { RelayContext } from './context'
 import {
@@ -335,9 +339,12 @@ describe('GitHandler', () => {
 
       expect(gitMock).toHaveBeenCalledWith(
         ['merge-base', '--is-ancestor', 'old-local-oid', 'remote-oid'],
-        '/repo'
+        '/repo',
+        { timeout: WORKTREE_CREATE_AUXILIARY_GIT_TIMEOUT_MS }
       )
-      expect(gitMock).toHaveBeenCalledWith(['reset', '--hard', 'remote-oid'], '/repo')
+      expect(gitMock).toHaveBeenCalledWith(['reset', '--hard', 'remote-oid'], '/repo', {
+        timeout: WORKTREE_MATERIALIZATION_TIMEOUT_MS
+      })
       expect(gitMock.mock.calls.map((call) => call[0])).not.toContainEqual([
         'update-ref',
         'refs/heads/main',
@@ -403,7 +410,7 @@ describe('GitHandler', () => {
           (
             args: string[],
             cwd: string,
-            opts?: { maxBuffer?: number }
+            opts?: { maxBuffer?: number; signal?: AbortSignal; timeout?: number }
           ) => Promise<{ stdout: string; stderr: string }>
         >()
       ;(handler as unknown as { git: typeof gitMock }).git = gitMock

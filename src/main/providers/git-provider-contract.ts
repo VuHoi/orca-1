@@ -77,7 +77,18 @@ export type IGitProvider = {
     repoPath: string,
     branchName: string,
     targetDir: string,
-    options?: { base?: string; checkoutExistingBranch?: boolean; noCheckout?: boolean }
+    options?: {
+      base?: string
+      checkoutExistingBranch?: boolean
+      noCheckout?: boolean
+      signal?: AbortSignal
+    }
+  ): Promise<void>
+  materializeWorktreeCheckout(
+    worktreePath: string,
+    branchName: string,
+    sparseDirectories: readonly string[],
+    options?: { signal?: AbortSignal }
   ): Promise<void>
   removeWorktree(
     worktreePath: string,
@@ -101,6 +112,6 @@ export type IGitProvider = {
   getRemoteCommitUrl(worktreePath: string, sha: string): Promise<string | null>
   worktreeIsClean(
     worktreePath: string,
-    options?: { includeUntracked?: boolean }
+    options?: { includeUntracked?: boolean; signal?: AbortSignal }
   ): Promise<{ clean: boolean; stdout?: string }>
 }

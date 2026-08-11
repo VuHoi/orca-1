@@ -173,6 +173,26 @@ describe('createWorktree base status merge', () => {
     })
   })
 
+  it('passes the early-terminal opt-in only through local desktop create IPC', async () => {
+    const store = createTestStore()
+    const wt = makeWorktree({
+      id: 'repo1::/path/feature',
+      repoId: 'repo1',
+      path: '/path/feature'
+    })
+    mockApi.worktrees.create.mockResolvedValue({ worktree: wt })
+    const createWorktree = store.getState().createWorktree
+    const args: Parameters<typeof createWorktree> = ['repo1', 'feature']
+    args[25] = { startTerminalEarly: true, focusEarlyTerminal: false }
+
+    await createWorktree(...args)
+
+    expect(mockApi.worktrees.create).toHaveBeenCalledWith(
+      expect.objectContaining({ startTerminalEarly: true, focusEarlyTerminal: false })
+    )
+    expect(runtimeEnvironmentTransportCall).not.toHaveBeenCalled()
+  })
+
   it('adopts an explicit provisioned root without calling ordinary worktree create', async () => {
     const store = createTestStore()
     const adopted = makeWorktree({

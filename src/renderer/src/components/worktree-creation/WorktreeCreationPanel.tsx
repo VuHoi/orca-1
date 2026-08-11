@@ -40,7 +40,9 @@ export default function WorktreeCreationPanel({
     return null
   }
 
-  const dismiss = (): void => useAppStore.getState().removePendingWorktreeCreation(creationId)
+  const dismiss = (): void => {
+    void useAppStore.getState().removePendingWorktreeCreation(creationId)
+  }
   const isError = entry.status === 'error'
   // VM creations keep the 'provisioning-vm' phase even on failure, so the failure renders in the
   // same centered layout as provisioning (just with the error header) rather than the generic block.

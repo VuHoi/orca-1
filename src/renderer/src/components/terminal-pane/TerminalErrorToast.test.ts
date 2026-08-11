@@ -78,6 +78,14 @@ describe('humanizeTerminalError', () => {
     expect(humanizeTerminalError(wrapped)).not.toContain('terminal_pane_owner_unverified')
   })
 
+  it('replaces the checkout barrier code with transient workspace copy', () => {
+    const humanized = humanizeTerminalError(
+      "Error invoking remote method 'pty:spawn': Error: worktree_checkout_in_progress"
+    )
+    expect(humanized).not.toContain('worktree_checkout_in_progress')
+    expect(humanized).toContain('This workspace is still being prepared')
+  })
+
   it('leaves other errors untouched', () => {
     expect(humanizeTerminalError('Paste failed.')).toBe('Paste failed.')
   })

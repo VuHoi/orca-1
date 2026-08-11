@@ -471,10 +471,10 @@ describe('staged background worktree creation', () => {
       },
       accountLabel: 'dev@company.test'
     }
-    const request = makeRequest({ linkedWorkItem, linkedTaskSourceContext })
-    const expectedOptions = { linkedWorkItem, linkedTaskSourceContext }
+    const earlyOptions = { startTerminalEarly: true, focusEarlyTerminal: true }
+    const expectedOptions = { linkedWorkItem, linkedTaskSourceContext, ...earlyOptions }
 
-    expect(continueBackgroundWorktreeCreation('creation-1', request)).toBe(true)
+    continueBackgroundWorktreeCreation('creation-1', makeRequest(expectedOptions))
     await vi.waitFor(() => expect(store.createWorktree).toHaveBeenCalledTimes(1))
     const stagedCreateCall = store.createWorktree.mock.calls[0] as unknown[] | undefined
     expect(stagedCreateCall?.[25]).toEqual(expectedOptions)

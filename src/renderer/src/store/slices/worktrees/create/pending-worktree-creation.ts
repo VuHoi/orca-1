@@ -2,6 +2,7 @@ import type { WorktreeSlice } from '../../worktree-helpers'
 import type { WorktreeSliceGet, WorktreeSliceSet } from '../listing/worktree-slice-types'
 import type { AppState } from '../../../types'
 import { cleanupFailedEphemeralVmWorkspace } from '@/lib/ephemeral-vm-failed-create-cleanup'
+import { isWebClientLocation } from '@/lib/web-client-location'
 
 export function createBeginPendingWorktreeCreation(
   set: WorktreeSliceSet,
@@ -46,14 +47,43 @@ export function createRemovePendingWorktreeCreation(
   set: WorktreeSliceSet,
   get: WorktreeSliceGet
 ): WorktreeSlice['removePendingWorktreeCreation'] {
-  return (creationId, options) => {
+  return async (creationId, options) => {
+    const entry = get().pendingWorktreeCreations[creationId]
+    if (!entry) {
+      return
+    }
+    const cleanupVm = options?.cleanupVm ?? true
+    const needsEarlyCreateCancellation =
+      cleanupVm &&
+      entry.status === 'creating' &&
+      entry.request.startTerminalEarly === true &&
+      !isWebClientLocation() &&
+      (entry.request.workspaceRunContext?.hostId ?? 'local') === 'local' &&
+      entry.request.worktreeCreateProgressMode !== 'indeterminate'
+    if (needsEarlyCreateCancellation) {
+      if (typeof window === 'undefined' || !window.api?.worktrees?.cancelCreate) {
+        return
+      }
+      try {
+        const result = await window.api.worktrees.cancelCreate({ creationId })
+        if (!result.cancelled) {
+          return
+        }
+      } catch {
+        return
+      }
+    }
+    const currentEntry = get().pendingWorktreeCreations[creationId]
+    if (!currentEntry || currentEntry.startedAt !== entry.startedAt) {
+      return
+    }
     let removedEntry: AppState['pendingWorktreeCreations'][string] | undefined
     set((s) => {
-      const entry = s.pendingWorktreeCreations[creationId]
-      if (!entry) {
+      const latest = s.pendingWorktreeCreations[creationId]
+      if (!latest || latest.startedAt !== entry.startedAt) {
         return {}
       }
-      removedEntry = entry
+      removedEntry = latest
       const { [creationId]: _removed, ...rest } = s.pendingWorktreeCreations
       return {
         pendingWorktreeCreations: rest,
@@ -61,7 +91,7 @@ export function createRemovePendingWorktreeCreation(
         ...(s.activePendingCreationId === creationId ? { activePendingCreationId: null } : {})
       }
     })
-    if (!removedEntry || options?.cleanupVm === false || typeof window === 'undefined') {
+    if (!removedEntry || !cleanupVm || typeof window === 'undefined') {
       return
     }
     if (removedEntry.phase === 'provisioning-vm' && window.api?.ephemeralVm?.cancelProvision) {

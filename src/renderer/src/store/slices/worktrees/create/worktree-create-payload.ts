@@ -11,6 +11,10 @@ export type CreateWorktreeCallOptions = {
   linkedTaskSourceContext?: TaskSourceContext | null
   /** Lets the owning runtime launch and prefill a task agent without first creating an idle shell. */
   startupDraft?: string
+  /** Requests local terminal preparation during checkout; paired runtimes omit it. */
+  startTerminalEarly?: boolean
+  /** Controls early-terminal focus; paired runtimes omit it. */
+  focusEarlyTerminal?: boolean
   /** True only when `name` came from the creature-name generator; gates host-side retirement. */
   nameWasGenerated?: boolean
   /** Parent picked in the composer. Sets sidebar nesting only; ignored if it no longer exists. */
@@ -102,6 +106,10 @@ export function buildLocalWorktreeCreateArgs(
     repoId: request.repoId,
     ...sharedCreateFields(request, attempt),
     ...(request.startup ? { startup: request.startup } : {}),
+    ...(request.options?.startTerminalEarly ? { startTerminalEarly: true } : {}),
+    ...(request.options?.startTerminalEarly && request.options.focusEarlyTerminal !== undefined
+      ? { focusEarlyTerminal: request.options.focusEarlyTerminal }
+      : {}),
     ...(request.creationId ? { creationId: request.creationId } : {})
   }
 }

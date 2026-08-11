@@ -53,7 +53,7 @@ describe('the PTY-stop waiver is never derived from `force`', () => {
       expect(value).not.toMatch(/\bforce\b/)
       // Positive check too: "not literally force" would still admit any other
       // in-scope boolean being wired in by mistake.
-      expect(value).toMatch(/^(?:args\.)?allowUnverifiedPtyStop$|^true$/)
+      expect(value).toMatch(/^(?:args\.)?allowUnverifiedPtyStop$|^(?:true|false)$/)
     }
     // Only the helper's spread may hardcode `true`; a call site doing so would
     // waive unconditionally.

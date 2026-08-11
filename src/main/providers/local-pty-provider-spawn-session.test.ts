@@ -391,6 +391,7 @@ describe('LocalPtyProvider', () => {
       ).rejects.toThrow('post-spawn publication failed')
       expect(spawnMock).toHaveBeenCalledOnce()
       expect(committed).toHaveBeenCalledOnce()
+      expect(committed).toHaveBeenCalledWith(expect.any(String))
     })
   })
 })

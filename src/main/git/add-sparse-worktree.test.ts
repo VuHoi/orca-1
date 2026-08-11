@@ -53,7 +53,7 @@ import {
   resetWorktreeRemovalState
 } from './remove-worktree-test-harness'
 
-import { addSparseWorktree } from './worktree'
+import { addSparseWorktree, WORKTREE_ADD_TIMEOUT_MS } from './worktree'
 
 const mockGitCommands = createGitCommandMocker(gitExecFileAsyncMock)
 const getGitCalls = createGitCallReader(gitExecFileAsyncMock)
@@ -98,7 +98,7 @@ describe('addSparseWorktree', () => {
     expect(calls).toEqual(
       expect.arrayContaining([
         'git -c core.longpaths=true sparse-checkout set -- packages/web',
-        'git -c core.longpaths=true checkout feature/test'
+        'git -c core.longpaths=true checkout --force feature/test'
       ])
     )
   })
@@ -112,7 +112,7 @@ describe('addSparseWorktree', () => {
     expect(calls).toEqual(
       expect.arrayContaining([
         'git sparse-checkout set -- packages/web',
-        'git checkout feature/test'
+        'git checkout --force feature/test'
       ])
     )
     expect(calls.some((call) => call.includes('core.longpaths'))).toBe(false)
@@ -125,7 +125,7 @@ describe('addSparseWorktree', () => {
 
     expect(gitExecFileAsyncMock).toHaveBeenCalledWith(
       ['sparse-checkout', 'set', '--', '-docs', 'src'],
-      { cwd: '/repo-feature' }
+      { cwd: '/repo-feature', timeout: WORKTREE_ADD_TIMEOUT_MS }
     )
   })
 

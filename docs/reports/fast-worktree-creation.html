@@ -1,0 +1,864 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Fast worktree creation · Orca engineering report</title>
+    <link rel="stylesheet" href="../../src/renderer/src/assets/main.css" />
+    <script>
+      document.documentElement.classList.toggle(
+        'dark',
+        window.matchMedia('(prefers-color-scheme: dark)').matches
+      )
+    </script>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        background: var(--background);
+      }
+
+      body {
+        margin: 0;
+        color: var(--foreground);
+        background: var(--background);
+        font-family: var(--font-sans);
+        font-size: 14px;
+        letter-spacing: 0.01em;
+        line-height: 1.55;
+      }
+
+      button,
+      code {
+        font: inherit;
+      }
+
+      code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+
+      .skip-link {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        padding: 8px 12px;
+        color: var(--primary-foreground);
+        background: var(--primary);
+        border-radius: calc(var(--radius) * 0.8);
+        transform: translateY(-160%);
+      }
+
+      .skip-link:focus {
+        transform: translateY(0);
+      }
+
+      .page {
+        width: min(1180px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 32px 0 56px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 40px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .brand-mark {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        color: var(--primary-foreground);
+        background: var(--primary);
+        border-radius: calc(var(--radius) * 0.8);
+        font-size: 12px;
+      }
+
+      .theme-toggle {
+        height: 32px;
+        padding: 0 12px;
+        color: var(--foreground);
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 0.8);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .theme-toggle:hover {
+        background: var(--accent);
+      }
+
+      .theme-toggle:focus-visible,
+      a:focus-visible {
+        outline: 2px solid var(--ring);
+        outline-offset: 2px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(260px, 0.6fr);
+        gap: 32px;
+        align-items: end;
+        padding-bottom: 32px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--muted-foreground);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 760px;
+        margin-bottom: 16px;
+        font-size: clamp(32px, 6vw, 48px);
+        font-weight: 650;
+        letter-spacing: -0.035em;
+        line-height: 1.02;
+      }
+
+      h2 {
+        margin-bottom: 18px;
+        font-size: 20px;
+        line-height: 1.25;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 14px;
+        line-height: 1.35;
+      }
+
+      .lede {
+        max-width: 720px;
+        margin-bottom: 0;
+        color: var(--muted-foreground);
+        font-size: 14px;
+      }
+
+      .status-card,
+      .card,
+      .phase,
+      .metric {
+        color: var(--card-foreground);
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 1.4);
+      }
+
+      .status-card {
+        padding: 18px;
+      }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+      }
+
+      .status-row:first-child {
+        padding-top: 0;
+      }
+
+      .status-row:last-child {
+        padding-bottom: 0;
+        border-bottom: 0;
+      }
+
+      .status-label {
+        color: var(--muted-foreground);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 9px;
+        color: var(--secondary-foreground);
+        background: var(--secondary);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .badge.success {
+        color: var(--foreground);
+        background: var(--status-success-background);
+        border-color: var(--status-success-border);
+      }
+
+      section {
+        padding-top: 40px;
+      }
+
+      .section-heading {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 18px;
+      }
+
+      .section-heading h2,
+      .section-heading p {
+        margin-bottom: 0;
+      }
+
+      .section-heading p {
+        max-width: 560px;
+        color: var(--muted-foreground);
+        font-size: 12px;
+        text-align: right;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .phase {
+        position: relative;
+        min-height: 178px;
+        padding: 16px;
+      }
+
+      .phase::after {
+        position: absolute;
+        top: 29px;
+        right: -11px;
+        z-index: 2;
+        width: 12px;
+        height: 1px;
+        background: var(--border);
+        content: '';
+      }
+
+      .phase:last-child::after {
+        display: none;
+      }
+
+      .phase-number {
+        display: grid;
+        width: 26px;
+        height: 26px;
+        margin-bottom: 20px;
+        place-items: center;
+        color: var(--primary-foreground);
+        background: var(--primary);
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .phase p,
+      .card p,
+      .card li {
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+
+      .phase p {
+        margin-bottom: 0;
+      }
+
+      .grid-2,
+      .grid-3,
+      .metrics {
+        display: grid;
+        gap: 12px;
+      }
+
+      .grid-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .grid-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .card {
+        padding: 20px;
+      }
+
+      .card p:last-child,
+      .card ul:last-child {
+        margin-bottom: 0;
+      }
+
+      .card ul {
+        margin: 12px 0 0;
+        padding-left: 18px;
+      }
+
+      .card li + li {
+        margin-top: 7px;
+      }
+
+      .rule {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+
+      .rule + .rule {
+        margin-top: 16px;
+      }
+
+      .rule-mark {
+        flex: 0 0 auto;
+        width: 8px;
+        height: 8px;
+        margin-top: 6px;
+        background: var(--status-success);
+        border-radius: 999px;
+      }
+
+      .rule p {
+        margin-bottom: 0;
+      }
+
+      .metrics {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .metric {
+        padding: 18px;
+      }
+
+      .metric-value {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 30px;
+        font-weight: 650;
+        letter-spacing: -0.025em;
+        line-height: 1;
+      }
+
+      .metric-label {
+        color: var(--muted-foreground);
+        font-size: 12px;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: calc(var(--radius) * 1.4);
+      }
+
+      table {
+        width: 100%;
+        min-width: 720px;
+        border-collapse: collapse;
+        background: var(--card);
+      }
+
+      th,
+      td {
+        padding: 13px 16px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted-foreground);
+        background: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      td {
+        font-size: 12px;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .note {
+        padding: 16px 18px;
+        color: var(--muted-foreground);
+        background: var(--muted);
+        border-left: 3px solid var(--ring);
+        border-radius: 0 calc(var(--radius) * 0.8) calc(var(--radius) * 0.8) 0;
+        font-size: 12px;
+      }
+
+      .file-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 20px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .file-list li {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        margin-top: 48px;
+        padding-top: 20px;
+        color: var(--muted-foreground);
+        border-top: 1px solid var(--border);
+        font-size: 11px;
+      }
+
+      @media (max-width: 900px) {
+        .hero,
+        .grid-3 {
+          grid-template-columns: 1fr;
+        }
+
+        .flow {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .phase::after {
+          display: none;
+        }
+
+        .metrics {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 620px) {
+        .page {
+          width: min(100% - 24px, 1180px);
+          padding-top: 20px;
+        }
+
+        .topbar,
+        .section-heading,
+        footer {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .section-heading p {
+          text-align: left;
+        }
+
+        .flow,
+        .grid-2,
+        .metrics,
+        .file-list {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+        }
+      }
+
+      @media print {
+        .page {
+          width: 100%;
+          padding: 0;
+        }
+
+        .theme-toggle,
+        .skip-link {
+          display: none;
+        }
+
+        .card,
+        .phase,
+        .metric,
+        .table-wrap {
+          break-inside: avoid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#report">Skip to report</a>
+    <div class="page">
+      <header class="topbar">
+        <div class="brand"><span class="brand-mark">O</span> Orca engineering</div>
+        <button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false">
+          Use dark mode
+        </button>
+      </header>
+
+      <main id="report">
+        <div class="hero">
+          <div>
+            <p class="eyebrow">Worktree creation · implementation report</p>
+            <h1>Faster worktrees, with a terminal that waits for truth.</h1>
+            <p class="lede">
+              Orca now overlaps independent creation work, avoids duplicate Git probes, and can
+              optionally reveal a terminal during checkout. The terminal is visible early but cannot
+              run input, agents, setup, or sibling tabs until the checkout and readiness contract is
+              complete.
+            </p>
+          </div>
+          <aside class="status-card" aria-label="Release status">
+            <div class="status-row">
+              <span class="status-label">Normal fast path</span>
+              <span class="badge success">Enabled</span>
+            </div>
+            <div class="status-row">
+              <span class="status-label">Early terminal</span>
+              <span class="badge">Experimental</span>
+            </div>
+            <div class="status-row">
+              <span class="status-label">Default setting</span>
+              <strong>Off</strong>
+            </div>
+            <div class="status-row">
+              <span class="status-label">Review verdict</span>
+              <span class="badge success">No open findings</span>
+            </div>
+          </aside>
+        </div>
+
+        <section aria-labelledby="pipeline-title">
+          <div class="section-heading">
+            <h2 id="pipeline-title">Creation pipeline</h2>
+            <p>Independent work overlaps; every authority-changing step stays ordered.</p>
+          </div>
+          <div class="flow" role="list">
+            <article class="phase" role="listitem">
+              <span class="phase-number">1</span>
+              <h3>Resolve in parallel</h3>
+              <p>
+                Username, base/ref evidence, shared paths, include files, and optional terminal
+                prep.
+              </p>
+            </article>
+            <article class="phase" role="listitem">
+              <span class="phase-number">2</span>
+              <h3>Register worktree</h3>
+              <p>
+                <code>git worktree add --no-checkout</code> creates the branch and worktree record.
+              </p>
+            </article>
+            <article class="phase" role="listitem">
+              <span class="phase-number">3</span>
+              <h3>Materialize checkout</h3>
+              <p>Tracked files arrive through the local, WSL, runtime, or relay-owned Git path.</p>
+            </article>
+            <article class="phase" role="listitem">
+              <span class="phase-number">4</span>
+              <h3>Finish readiness</h3>
+              <p>Shared links, copied includes, setup policy, and default-tab config settle.</p>
+            </article>
+            <article class="phase" role="listitem">
+              <span class="phase-number">5</span>
+              <h3>Release exactly once</h3>
+              <p>
+                The same PTY acknowledges its nonce-bound release before startup telemetry fires.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section aria-labelledby="speed-title">
+          <div class="section-heading">
+            <h2 id="speed-title">Where latency was removed</h2>
+            <p>
+              Optimization is structural; the report does not claim an unmeasured absolute speedup.
+            </p>
+          </div>
+          <div class="grid-3">
+            <article class="card">
+              <p class="eyebrow">Less serial work</p>
+              <h3>Independent probes overlap</h3>
+              <p>
+                Username/base resolution and readiness discovery no longer queue behind unrelated
+                I/O.
+              </p>
+            </article>
+            <article class="card">
+              <p class="eyebrow">Fewer subprocesses</p>
+              <h3>Branch evidence is reused</h3>
+              <p>
+                Exit-code-1 absence is authoritative across local, WSL, SSH, and runtime candidates.
+              </p>
+            </article>
+            <article class="card">
+              <p class="eyebrow">Fresh without stale cache</p>
+              <h3>Only in-flight work coalesces</h3>
+              <p>
+                Concurrent username reads share work; later creates reread mutable Git
+                configuration.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section aria-labelledby="safety-title">
+          <div class="section-heading">
+            <h2 id="safety-title">The early terminal safety contract</h2>
+            <p>Visible does not mean executable. The checkout gate owns every startup boundary.</p>
+          </div>
+          <div class="grid-2">
+            <article class="card">
+              <div class="rule">
+                <span class="rule-mark" aria-hidden="true"></span>
+                <div>
+                  <h3>Input is swallowed before readiness</h3>
+                  <p>
+                    The gate disables echo, ignores control signals, and accepts only its random
+                    release token.
+                  </p>
+                </div>
+              </div>
+              <div class="rule">
+                <span class="rule-mark" aria-hidden="true"></span>
+                <div>
+                  <h3>Startup work cannot jump the queue</h3>
+                  <p>
+                    Agents, setup, default tabs, trust mutation, and sibling terminals remain
+                    blocked.
+                  </p>
+                </div>
+              </div>
+              <div class="rule">
+                <span class="rule-mark" aria-hidden="true"></span>
+                <div>
+                  <h3>Shell hooks reload after checkout</h3>
+                  <p>
+                    The original interactive shell receives startup only after project files exist.
+                  </p>
+                </div>
+              </div>
+            </article>
+            <article class="card">
+              <div class="rule">
+                <span class="rule-mark" aria-hidden="true"></span>
+                <div>
+                  <h3>Rollback requires physical-stop proof</h3>
+                  <p>
+                    Orca keeps the partial worktree when it cannot prove every creation PTY exited.
+                  </p>
+                </div>
+              </div>
+              <div class="rule">
+                <span class="rule-mark" aria-hidden="true"></span>
+                <div>
+                  <h3>Cancellation linearizes once</h3>
+                  <p>
+                    A winning cancellation suppresses every release/startup path; a committed start
+                    stays final.
+                  </p>
+                </div>
+              </div>
+              <div class="rule">
+                <span class="rule-mark" aria-hidden="true"></span>
+                <div>
+                  <h3>Post-spawn failures retain PTY identity</h3>
+                  <p>
+                    Even publication failure before provider return reaches bounded exact-PTY
+                    teardown.
+                  </p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section aria-labelledby="matrix-title">
+          <div class="section-heading">
+            <h2 id="matrix-title">Execution matrix</h2>
+            <p>
+              Remote and folder ownership are preserved instead of borrowing the desktop-only
+              experiment.
+            </p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Surface</th>
+                  <th scope="col">Fast create</th>
+                  <th scope="col">Early terminal</th>
+                  <th scope="col">Safety / compatibility</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><strong>Local desktop</strong></td>
+                  <td>Two-phase + parallel discovery</td>
+                  <td><span class="badge success">Optional</span></td>
+                  <td>Exact gate handshake and PTY-stop proof</td>
+                </tr>
+                <tr>
+                  <td><strong>WSL</strong></td>
+                  <td>Distro-routed two-phase Git</td>
+                  <td><span class="badge success">Optional</span></td>
+                  <td>POSIX gate, isolated hook env, WSLENV allowlist</td>
+                </tr>
+                <tr>
+                  <td><strong>SSH / relay</strong></td>
+                  <td>Materialization RPC + old-relay fallback</td>
+                  <td><span class="badge">Not enabled</span></td>
+                  <td>Advisory cancellation; additive wire contract</td>
+                </tr>
+                <tr>
+                  <td><strong>Paired runtime</strong></td>
+                  <td>Host-owned materialization</td>
+                  <td><span class="badge">Omitted</span></td>
+                  <td>Existing terminal ownership remains authoritative</td>
+                </tr>
+                <tr>
+                  <td><strong>Folder workspace</strong></td>
+                  <td>Existing flow unchanged</td>
+                  <td><span class="badge">Not applicable</span></td>
+                  <td>No Git-worktree assumption introduced</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section aria-labelledby="evidence-title">
+          <div class="section-heading">
+            <h2 id="evidence-title">Verification evidence</h2>
+            <p>Final uncontended results from the completed worktree.</p>
+          </div>
+          <div class="metrics">
+            <article class="metric">
+              <strong class="metric-value">49,287</strong>
+              <span class="metric-label">full-suite tests passed</span>
+            </article>
+            <article class="metric">
+              <strong class="metric-value">1,254</strong>
+              <span class="metric-label">focused safety tests passed</span>
+            </article>
+            <article class="metric">
+              <strong class="metric-value">74</strong>
+              <span class="metric-label">reliability gates passed</span>
+            </article>
+            <article class="metric">
+              <strong class="metric-value">8</strong>
+              <span class="metric-label">Electron journey executions passed</span>
+            </article>
+          </div>
+          <div class="grid-3" style="margin-top: 12px">
+            <article class="card">
+              <p class="eyebrow">Compatibility</p>
+              <h3>Git 2.25.1: 7 / 7</h3>
+              <p>Real-binary worktree contracts passed on the supported baseline.</p>
+            </article>
+            <article class="card">
+              <p class="eyebrow">Version skew</p>
+              <h3>v1.4.178: 4 / 4</h3>
+              <p>Current/legacy terminal-wire journeys passed in both directions.</p>
+            </article>
+            <article class="card">
+              <p class="eyebrow">Quality gates</p>
+              <h3>Typecheck, lint, format</h3>
+              <p>Node, CLI, web, max-lines, localization, and diff checks passed.</p>
+            </article>
+          </div>
+        </section>
+
+        <section aria-labelledby="files-title">
+          <div class="section-heading">
+            <h2 id="files-title">Primary implementation map</h2>
+            <p>
+              Entry points for reviewers; the reliability manifest contains the exhaustive test map.
+            </p>
+          </div>
+          <article class="card">
+            <ul class="file-list">
+              <li><code>src/main/git/worktree.ts</code></li>
+              <li><code>src/main/ipc/worktree-remote.ts</code></li>
+              <li><code>src/main/runtime/orca-runtime.ts</code></li>
+              <li><code>src/shared/worktree-checkout-gate.ts</code></li>
+              <li><code>src/relay/git-handler-worktree-ops.ts</code></li>
+              <li><code>src/renderer/src/store/slices/worktrees.ts</code></li>
+              <li><code>src/main/worktree-create-timing.ts</code></li>
+              <li><code>config/reliability-gates.jsonc</code></li>
+            </ul>
+          </article>
+        </section>
+
+        <section aria-labelledby="gaps-title">
+          <div class="section-heading">
+            <h2 id="gaps-title">Accepted experimental gaps</h2>
+            <p>The setting remains off by default while physical and soak evidence accumulates.</p>
+          </div>
+          <div class="note">
+            Physical Windows, Linux, and WSL journeys; live SSH and an actual old relay;
+            crash-persistent checkout barriers; and a reproducible end-to-end performance benchmark
+            remain uncollected. Cancellation/setup/default-tab/release-failure Electron variants
+            remain unit-covered. These are evidence gaps, not open P0/P1/P2 findings.
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>Prepared 10 August 2026 · Draft PR evidence</span>
+        <span>Experimental feature remains disabled by default</span>
+      </footer>
+    </div>
+
+    <script>
+      const root = document.documentElement
+      const toggle = document.querySelector('#theme-toggle')
+      const refreshLabel = () => {
+        const dark = root.classList.contains('dark')
+        toggle.textContent = dark ? 'Use light mode' : 'Use dark mode'
+        toggle.setAttribute('aria-pressed', String(dark))
+      }
+
+      toggle.addEventListener('click', () => {
+        root.classList.toggle('dark')
+        refreshLabel()
+      })
+      refreshLabel()
+    </script>
+  </body>
+</html>

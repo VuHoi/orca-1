@@ -111,12 +111,24 @@ export type CreateWorktreeArgs = {
   /** Optional startup command for callers that want the backend to spawn the
    *  first terminal as soon as the worktree is registered. */
   startup?: WorktreeStartupLaunch
+  /** Requests terminal preparation before checkout completes when the local host supports it. */
+  startTerminalEarly?: boolean
+  /** Controls whether an early terminal takes focus. Omitted preserves the focused default. */
+  focusEarlyTerminal?: boolean
   /** Correlates `createWorktree:progress` events back to a specific pending
    *  creation in the renderer, so concurrent background creates each drive
    *  their own status surface. Omitted by synchronous callers. */
   creationId?: string
   /** Authorizes the host to mint system-owned automation provenance. */
   automationProvenanceRequest?: AutomationWorkspaceProvenanceRequest
+}
+
+export type CancelWorktreeCreateArgs = {
+  creationId: string
+}
+
+export type CancelWorktreeCreateResult = {
+  cancelled: boolean
 }
 
 export type AdoptProvisionedRootArgs = CreateWorktreeArgs & {
@@ -159,6 +171,8 @@ export type CreateWorktreeResult = {
     ptyId?: string | null
     surface?: 'visible' | 'background'
   }
+  /** Main accepted cancellation before early startup committed. Older clients may ignore it. */
+  earlyStartupCancelled?: true
   timing?: WorktreeCreateTiming
 }
 

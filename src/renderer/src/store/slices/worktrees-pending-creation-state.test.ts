@@ -10,6 +10,7 @@ import {
 } from './worktrees-slice-test-harness'
 
 const requestWorktreeBaseFallbackNotice = vi.hoisted(() => vi.fn())
+const isWebClientLocation = vi.hoisted(() => vi.fn(() => false))
 
 vi.mock('sonner', () => ({
   toast: {
@@ -24,6 +25,8 @@ vi.mock('sonner', () => ({
 vi.mock('@/components/worktree-base-fallback-notice', () => ({
   requestWorktreeBaseFallbackNotice
 }))
+
+vi.mock('@/lib/web-client-location', () => ({ isWebClientLocation }))
 
 beforeEach(resetWorktreeSliceModuleMemory)
 
@@ -56,6 +59,7 @@ function makePendingCreation(
 describe('pending worktree creation state', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    isWebClientLocation.mockReturnValue(false)
     resetRemoteRuntimeMocks()
   })
 
@@ -165,12 +169,152 @@ describe('pending worktree creation state', () => {
     store.getState().beginPendingWorktreeCreation(makePendingCreation('c1'))
     store.getState().beginPendingWorktreeCreation(makePendingCreation('c2'))
     // c2 is active now; removing the background c1 must not steal the surface.
-    store.getState().removePendingWorktreeCreation('c1')
+    void store.getState().removePendingWorktreeCreation('c1')
 
     expect(store.getState().pendingWorktreeCreations.c1).toBeUndefined()
     expect(store.getState().activePendingCreationId).toBe('c2')
 
-    store.getState().removePendingWorktreeCreation('c2')
+    void store.getState().removePendingWorktreeCreation('c2')
+    expect(store.getState().activePendingCreationId).toBeNull()
+  })
+
+  it('keeps an active local early create visible until cancellation is accepted', async () => {
+    const store = createTestStore()
+    let resolveCancellation!: (result: { cancelled: boolean }) => void
+    mockApi.worktrees.cancelCreate.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCancellation = resolve
+      })
+    )
+    store.getState().beginPendingWorktreeCreation(
+      makePendingCreation('c1', {
+        request: {
+          ...makePendingCreation('c1').request,
+          startTerminalEarly: true,
+          worktreeCreateProgressMode: 'stepped'
+        }
+      })
+    )
+
+    const removal = store.getState().removePendingWorktreeCreation('c1')
+
+    expect(mockApi.worktrees.cancelCreate).toHaveBeenCalledWith({ creationId: 'c1' })
+    expect(store.getState().pendingWorktreeCreations.c1).toBeDefined()
+    expect(store.getState().activePendingCreationId).toBe('c1')
+
+    resolveCancellation({ cancelled: true })
+    await removal
+
+    expect(store.getState().pendingWorktreeCreations.c1).toBeUndefined()
+    expect(store.getState().activePendingCreationId).toBeNull()
+  })
+
+  it.each([
+    ['main already committed startup', () => Promise.resolve({ cancelled: false })],
+    ['cancellation IPC failed', () => Promise.reject(new Error('ipc unavailable'))]
+  ])('retains an early create when %s', async (_label, cancel) => {
+    const store = createTestStore()
+    mockApi.worktrees.cancelCreate.mockImplementationOnce(cancel)
+    store.getState().beginPendingWorktreeCreation(
+      makePendingCreation('c1', {
+        request: {
+          ...makePendingCreation('c1').request,
+          startTerminalEarly: true,
+          worktreeCreateProgressMode: 'stepped'
+        }
+      })
+    )
+
+    await store.getState().removePendingWorktreeCreation('c1')
+
+    expect(store.getState().pendingWorktreeCreations.c1).toBeDefined()
+    expect(store.getState().activePendingCreationId).toBe('c1')
+  })
+
+  it('does not let a delayed cancellation remove a retried attempt', async () => {
+    const store = createTestStore()
+    let resolveCancellation!: (result: { cancelled: boolean }) => void
+    mockApi.worktrees.cancelCreate.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCancellation = resolve
+      })
+    )
+    store.getState().beginPendingWorktreeCreation(
+      makePendingCreation('c1', {
+        request: {
+          ...makePendingCreation('c1').request,
+          startTerminalEarly: true,
+          worktreeCreateProgressMode: 'stepped'
+        }
+      })
+    )
+    const removal = store.getState().removePendingWorktreeCreation('c1')
+    store.getState().updatePendingWorktreeCreation('c1', { startedAt: 2000 })
+
+    resolveCancellation({ cancelled: true })
+    await removal
+
+    expect(store.getState().pendingWorktreeCreations.c1.startedAt).toBe(2000)
+  })
+
+  it.each([
+    ['paired runtime', { worktreeCreateProgressMode: 'indeterminate' as const }],
+    [
+      'SSH host',
+      {
+        worktreeCreateProgressMode: 'stepped' as const,
+        workspaceRunContext: {
+          kind: 'workspace-run' as const,
+          projectId: 'project-1',
+          hostId: 'ssh:target' as const,
+          projectHostSetupId: 'setup-1',
+          repoId: 'repo1',
+          path: '/repo'
+        }
+      }
+    ]
+  ])('does not send desktop early-create cancellation for a %s', (_label, requestPatch) => {
+    const store = createTestStore()
+    store.getState().beginPendingWorktreeCreation(
+      makePendingCreation('c1', {
+        request: {
+          ...makePendingCreation('c1').request,
+          startTerminalEarly: true,
+          ...requestPatch
+        }
+      })
+    )
+
+    void store.getState().removePendingWorktreeCreation('c1')
+
+    expect(mockApi.worktrees.cancelCreate).not.toHaveBeenCalled()
+  })
+
+  it('dismisses a stepped local-host create without desktop cancellation in the web client', async () => {
+    isWebClientLocation.mockReturnValue(true)
+    const store = createTestStore()
+    store.getState().beginPendingWorktreeCreation(
+      makePendingCreation('c1', {
+        request: {
+          ...makePendingCreation('c1').request,
+          startTerminalEarly: true,
+          worktreeCreateProgressMode: 'stepped',
+          workspaceRunContext: {
+            kind: 'workspace-run',
+            projectId: 'project-1',
+            hostId: 'local',
+            projectHostSetupId: 'setup-1',
+            repoId: 'repo1',
+            path: '/repo'
+          }
+        }
+      })
+    )
+
+    await store.getState().removePendingWorktreeCreation('c1')
+
+    expect(mockApi.worktrees.cancelCreate).not.toHaveBeenCalled()
+    expect(store.getState().pendingWorktreeCreations.c1).toBeUndefined()
     expect(store.getState().activePendingCreationId).toBeNull()
   })
 
@@ -182,7 +326,7 @@ describe('pending worktree creation state', () => {
       })
     )
 
-    store.getState().removePendingWorktreeCreation('c1')
+    void store.getState().removePendingWorktreeCreation('c1')
 
     expect(mockApi.ephemeralVm.cancelProvision).toHaveBeenCalledWith({ provisionId: 'c1' })
     expect(store.getState().pendingWorktreeCreations.c1).toBeUndefined()
@@ -211,7 +355,7 @@ describe('pending worktree creation state', () => {
       })
     )
 
-    store.getState().removePendingWorktreeCreation('c1')
+    void store.getState().removePendingWorktreeCreation('c1')
 
     expect(deleteProjectHostSetup).toHaveBeenCalledWith({ setupId: 'setup-1' })
     await vi.waitFor(() =>
@@ -232,7 +376,7 @@ describe('pending worktree creation state', () => {
       })
     )
 
-    store.getState().removePendingWorktreeCreation('c1', { cleanupVm: false })
+    void store.getState().removePendingWorktreeCreation('c1', { cleanupVm: false })
 
     expect(mockApi.ephemeralVm.cleanup).not.toHaveBeenCalled()
     expect(store.getState().pendingWorktreeCreations.c1).toBeUndefined()

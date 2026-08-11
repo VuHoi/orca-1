@@ -880,6 +880,8 @@ const api = {
 
     create: (args) => ipcRenderer.invoke('worktrees:create', args),
 
+    cancelCreate: (args) => ipcRenderer.invoke('worktrees:cancelCreate', args),
+
     adoptProvisionedRoot: (args) => ipcRenderer.invoke('worktrees:adoptProvisionedRoot', args),
 
     onCreateProgress: (

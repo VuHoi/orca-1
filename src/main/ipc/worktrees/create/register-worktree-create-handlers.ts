@@ -1,5 +1,7 @@
 import { ipcMain, app } from 'electron'
 import type {
+  CancelWorktreeCreateArgs,
+  CancelWorktreeCreateResult,
   CreateWorktreeArgs,
   CreateWorktreeResult,
   AdoptProvisionedRootArgs
@@ -29,75 +31,103 @@ import { findExactRepoOwner, isCapturedRepoCurrent } from '../listing/worktree-h
 import type { WorktreeIpcContext } from '../worktree-ipc-context'
 
 export function registerWorktreeCreateHandlers(context: WorktreeIpcContext): void {
-  const { mainWindow, store, runtime, options } = context
+  const { mainWindow, store, runtime, options, worktreeCreateCancellations } = context
+
+  ipcMain.handle(
+    'worktrees:cancelCreate',
+    (event, args: CancelWorktreeCreateArgs): CancelWorktreeCreateResult => ({
+      cancelled: worktreeCreateCancellations.cancel(event, args.creationId)
+    })
+  )
 
   ipcMain.handle(
     'worktrees:create',
-    async (_event, rawArgs: CreateWorktreeArgs): Promise<CreateWorktreeResult> => {
+    async (event, rawArgs: CreateWorktreeArgs): Promise<CreateWorktreeResult> => {
       const args = normalizeLinkedWorkItemFields(rawArgs)
-      // Why span here: parent the child git spans for the trace tree; don't attach branch name/remote URL (user content) — repo ID is the safer correlator.
-      return withWorktreeSpan({ stage: 'create' }, async () => {
-        const repo = store.getRepo(args.repoId)
-        if (!repo) {
-          throw new Error(`Repo not found: ${args.repoId}`)
-        }
+      let cancellation: AbortController | null = null
+      try {
+        // Why span here: parent the child git spans for the trace tree; don't attach branch name/remote URL (user content) — repo ID is the safer correlator.
+        return await withWorktreeSpan({ stage: 'create' }, async () => {
+          const repo = store.getRepo(args.repoId)
+          if (!repo) {
+            throw new Error(`Repo not found: ${args.repoId}`)
+          }
+          if (args.startTerminalEarly === true && !isFolderRepo(repo) && !repo.connectionId) {
+            cancellation = worktreeCreateCancellations.begin(event, args.creationId)
+          }
 
-        const sourceParse = workspaceSourceSchema.safeParse(args.telemetrySource)
-        const source: WorkspaceSource = sourceParse.success ? sourceParse.data : 'unknown'
+          const sourceParse = workspaceSourceSchema.safeParse(args.telemetrySource)
+          const source: WorkspaceSource = sourceParse.success ? sourceParse.data : 'unknown'
 
-        const automationProvenance = resolveAutomationWorkspaceProvenance({
-          authority: runtime,
-          repoSelector: args.repoId,
-          repo,
-          request: args.automationProvenanceRequest
-        })
-        const createArgs: CreateWorktreeArgsWithSystemProvenance = {
-          ...args,
-          automationProvenance
-        }
+          const automationProvenance = resolveAutomationWorkspaceProvenance({
+            authority: runtime,
+            repoSelector: args.repoId,
+            repo,
+            request: args.automationProvenanceRequest
+          })
+          const createArgs: CreateWorktreeArgsWithSystemProvenance = {
+            ...args,
+            automationProvenance
+          }
 
-        let result: CreateWorktreeResult
-        try {
-          // Why: wrap only the helpers; the pre-validation throws above are IPC-shape bugs, not the git/filesystem failures the funnel tracks.
-          result = isFolderRepo(repo)
-            ? createFolderWorkspace(createArgs, repo, store)
-            : repo.connectionId
-              ? await createRemoteWorktree(createArgs, repo, store, mainWindow)
-              : await createLocalWorktree(createArgs, repo, store, mainWindow, runtime)
-        } catch (error) {
-          releaseAutomationWorkspaceProvenanceRequest(args.automationProvenanceRequest)
-          track('workspace_create_failed', {
+          let result: CreateWorktreeResult
+          try {
+            // Why: wrap only the helpers; the pre-validation throws above are IPC-shape bugs, not the git/filesystem failures the funnel tracks.
+            result = isFolderRepo(repo)
+              ? createFolderWorkspace(createArgs, repo, store)
+              : repo.connectionId
+                ? await createRemoteWorktree(createArgs, repo, store, mainWindow)
+                : await createLocalWorktree(
+                    createArgs,
+                    repo,
+                    store,
+                    mainWindow,
+                    runtime,
+                    cancellation
+                      ? {
+                          earlyStartupSignal: cancellation.signal,
+                          commitEarlyStartup: () =>
+                            worktreeCreateCancellations.commit(event, args.creationId, cancellation)
+                        }
+                      : undefined
+                  )
+          } catch (error) {
+            releaseAutomationWorkspaceProvenanceRequest(args.automationProvenanceRequest)
+            track('workspace_create_failed', {
+              source,
+              error_class: classifyWorkspaceCreateError(error),
+              ...getCohortAtEmit()
+            })
+            throw error
+          }
+          finishAutomationWorkspaceProvenanceRequest(args.automationProvenanceRequest)
+
+          // Why: reaching here means create succeeded (helpers throw); skip a separate workspace_initialized (telemetry-plan.md§Deferred); never send the branch name.
+          track('workspace_created', {
             source,
-            error_class: classifyWorkspaceCreateError(error),
+            from_existing_branch:
+              !isFolderRepo(repo) &&
+              typeof args.baseBranch === 'string' &&
+              args.baseBranch.length > 0,
             ...getCohortAtEmit()
           })
-          throw error
-        }
-        finishAutomationWorkspaceProvenanceRequest(args.automationProvenanceRequest)
 
-        // Why: reaching here means create succeeded (helpers throw); skip a separate workspace_initialized (telemetry-plan.md§Deferred); never send the branch name.
-        track('workspace_created', {
-          source,
-          from_existing_branch:
-            !isFolderRepo(repo) &&
-            typeof args.baseBranch === 'string' &&
-            args.baseBranch.length > 0,
-          ...getCohortAtEmit()
+          if (isFolderRepo(repo)) {
+            notifyWorktreesChanged(mainWindow, repo.id)
+          }
+
+          options?.onWorktreeLifecycle?.({
+            kind: 'created',
+            worktreeId: result.worktree.id,
+            path: result.worktree.path,
+            branch: result.worktree.branch
+          })
+
+          return result
         })
-
-        if (isFolderRepo(repo)) {
-          notifyWorktreesChanged(mainWindow, repo.id)
-        }
-
-        options?.onWorktreeLifecycle?.({
-          kind: 'created',
-          worktreeId: result.worktree.id,
-          path: result.worktree.path,
-          branch: result.worktree.branch
-        })
-
-        return result
-      })
+      } finally {
+        worktreeCreateCancellations.finish(event, args.creationId, cancellation)
+      }
     }
   )
 

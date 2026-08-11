@@ -102,6 +102,15 @@ describe('resolveWorktreeSharedDirectories', () => {
     expect(await resolveWorktreeSharedDirectories(repo)).toEqual([])
   })
 
+  it('stops before discovery when speculative work is cancelled', async () => {
+    mkdirSync(join(repo, 'node_modules'))
+    writeOrcaYaml('worktree:\n  sharedDirectories:\n    - node_modules\n')
+    const controller = new AbortController()
+    controller.abort()
+
+    expect(await resolveWorktreeSharedDirectories(repo, { signal: controller.signal })).toEqual([])
+  })
+
   it('returns [] when orca.yaml has no worktree key', async () => {
     mkdirSync(join(repo, 'node_modules'))
     writeOrcaYaml('scripts:\n  setup: pnpm install\n')

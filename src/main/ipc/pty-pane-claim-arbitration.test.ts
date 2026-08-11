@@ -312,6 +312,7 @@ describe('registerPtyHandlers', () => {
     ).rejects.toThrow('agent_session_exited_during_start')
 
     expect(onPtySpawnCommitted).toHaveBeenCalledOnce()
+    expect(onPtySpawnCommitted).toHaveBeenCalledWith('pty-early-exit')
     expect(persistPtyBinding).not.toHaveBeenCalled()
     const internals = runtime as unknown as {
       handleByPtyId: Map<string, string>
