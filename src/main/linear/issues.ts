@@ -40,6 +40,9 @@ type LinearIssueNode = {
   estimate?: number | null
   priority: number
   updatedAt: string
+  children?: {
+    nodes?: { id: string; state?: { type?: string | null } | null }[] | null
+  } | null
   labelIds?: string[] | null
   state?: {
     name?: string | null
@@ -146,6 +149,14 @@ const LINEAR_ISSUE_NODE_FIELDS = `
   priority
   estimate
   updatedAt
+  children {
+    nodes {
+      id
+      state {
+        type
+      }
+    }
+  }
   labelIds
   state {
     name
@@ -424,6 +435,9 @@ function mapRawIssueForWorkspace(
     priority: issue.priority,
     dueDate: issue.dueDate ?? null,
     updatedAt: issue.updatedAt,
+    subIssueCount: issue.children?.nodes?.length ?? 0,
+    completedSubIssueCount:
+      (issue.children?.nodes ?? []).filter((n) => n.state?.type === 'completed').length,
     workspaceId: entry.workspace.id,
     workspaceName: entry.workspace.organizationName
   }

@@ -1931,6 +1931,20 @@ const api = {
       force?: boolean
     }): Promise<unknown> => ipcRenderer.invoke('linear:listProjectIssues', args),
 
+    createCustomView: (args: {
+      name: string
+      modelName?: 'issue' | 'project'
+      description?: string
+      color?: string
+      icon?: string
+      shared?: boolean
+      filters?: unknown
+      filterData?: unknown
+      teamId?: string
+      workspaceId?: string
+    }): Promise<{ ok: true; customView: Record<string, unknown> } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('linear:createCustomView', args),
+
     listCustomViews: (args: {
       model: string
       limit?: number

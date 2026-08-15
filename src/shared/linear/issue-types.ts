@@ -32,6 +32,8 @@ export type LinearIssue = {
   priority: number
   dueDate?: string | null
   updatedAt: string
+  subIssueCount?: number
+  completedSubIssueCount?: number
 }
 
 export type LinearIssueChildSummary = {
