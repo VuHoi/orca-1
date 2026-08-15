@@ -18,7 +18,9 @@ import { PANEL_PING_TYPE, PANEL_PONG_TYPE } from './plugin-panel-bridge'
  */
 
 export const PLUGIN_PANEL_CSP =
-  "default-src 'none'; connect-src 'none'; script-src 'unsafe-inline'; " +
+  // FORK-LOCAL: connect-src allows loopback so panels can fetch a worker-run
+  // local HTTP server. Upstream: "connect-src 'none'".
+  "default-src 'none'; connect-src http://127.0.0.1:* http://localhost:*; script-src 'unsafe-inline'; " +
   "style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'"
 
 /** Renderer-substituted placeholders. Main cannot know the renderer's theme

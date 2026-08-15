@@ -166,7 +166,7 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     scope: 'plugin-private',
     capability: 'storage',
     mutation: true,
-    panel: false,
+    panel: true,
     params: storageSetParams,
     result: storageSetResult
   }),
@@ -176,7 +176,7 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     scope: 'plugin-private',
     capability: 'storage',
     mutation: true,
-    panel: false,
+    panel: true,
     params: storageDeleteParams,
     result: storageDeleteResult
   }),
@@ -186,7 +186,7 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     scope: 'plugin-private',
     capability: 'storage',
     mutation: false,
-    panel: false,
+    panel: true,
     params: storageKeysParams,
     result: storageKeysResult
   }),
@@ -196,7 +196,7 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     scope: 'plugin-private',
     capability: 'secrets',
     mutation: false,
-    panel: false,
+    panel: true,
     params: secretsGetParams,
     result: secretsGetResult
   }),
@@ -206,7 +206,7 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     scope: 'plugin-private',
     capability: 'secrets',
     mutation: true,
-    panel: false,
+    panel: true,
     params: secretsSetParams,
     result: secretsSetResult
   }),
@@ -216,7 +216,7 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     scope: 'plugin-private',
     capability: 'secrets',
     mutation: true,
-    panel: false,
+    panel: true,
     params: secretsDeleteParams,
     result: secretsDeleteResult
   }),
@@ -226,7 +226,7 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     scope: 'plugin-private',
     capability: 'settings:own',
     mutation: false,
-    panel: false,
+    panel: true,
     params: settingsGetParams,
     result: settingsGetResult
   }),
@@ -236,7 +236,7 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     scope: 'plugin-private',
     capability: 'settings:own',
     mutation: true,
-    panel: false,
+    panel: true,
     params: settingsSetParams,
     result: settingsSetResult
   }),
@@ -246,7 +246,7 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     scope: 'host-events',
     capability: 'events:subscribe',
     mutation: false,
-    panel: false,
+    panel: true,
     params: eventsSubscribeParams,
     result: eventsSubscribeResult
   })

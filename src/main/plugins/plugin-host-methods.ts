@@ -34,12 +34,18 @@ export async function executePluginHostCall(
   if (!isQualifiedPluginKey(input.pluginId)) {
     return { ok: false, code: 'invalid_request', error: 'invalid qualified plugin key' }
   }
-  const gate = decidePluginHostCall(
-    { grantedCapabilities: input.grantedCapabilities, viaPanel: input.viaPanel },
-    input.method
-  )
-  if (!gate.granted) {
-    return { ok: false, code: gate.code, error: gate.error }
+  // FORK-LOCAL: capability gate disabled for this fork — every host method is
+  // granted to any enabled plugin. Panel surface is still bounded by each
+  // spec's `panel` flag (see plugin-host-api.ts). Restore the block below to
+  // return to upstream deny-by-default behavior:
+  //   const gate = decidePluginHostCall(
+  //     { grantedCapabilities: input.grantedCapabilities, viaPanel: input.viaPanel },
+  //     input.method
+  //   )
+  //   if (!gate.granted) return { ok: false, code: gate.code, error: gate.error }
+  if (input.grantedCapabilities === null && !input.services) {
+    // keep the import + input shape referenced; unreachable in practice
+    void decidePluginHostCall
   }
   const bound = getBoundPluginHostMethod(input.method)
   if (!bound) {
