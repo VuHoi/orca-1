@@ -106,7 +106,7 @@ const winSpeechNativeResource = {
 /** @type {import('electron-builder').Configuration} */
 module.exports = {
   appId,
-  productName: 'Orca',
+  productName: 'Wakii',
   protocols: [{ name: 'Orca', schemes: ['orca'] }],
   ...(devChannelBuildVersion
     ? { extraMetadata: { version: devChannelBuildVersion } }
