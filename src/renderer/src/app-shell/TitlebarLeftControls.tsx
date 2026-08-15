@@ -71,10 +71,10 @@ export function TitlebarLeftControls({ layout }: { layout: AppChromeLayout }): R
             <ContextMenuTrigger asChild>
               <div
                 className="titlebar-app-name"
-                aria-label={translate('auto.App.5096cbbc86', 'wakii')}
+                aria-label={translate('auto.App.5096cbbc86', 'Wakii')}
               >
                 <span className="titlebar-app-name-main">
-                  {translate('auto.App.5096cbbc86', 'wakii')}
+                  {translate('auto.App.5096cbbc86', 'Wakii')}
                 </span>
               </div>
             </ContextMenuTrigger>

@@ -249,7 +249,7 @@ export function CrashReportDialogSurface({
                 <div className="font-medium text-foreground">{formatSummary(report)}</div>
                 <div className="mt-1 text-muted-foreground">
                   {new Date(report.createdAt).toLocaleString()} · {report.platform} {report.arch} ·
-                  {translate('auto.components.crash.report.CrashReportDialog.835037edc9', 'wakii')}{' '}
+                  {translate('auto.components.crash.report.CrashReportDialog.835037edc9', 'Wakii')}{' '}
                   {report.appVersion}
                 </div>
               </div>
