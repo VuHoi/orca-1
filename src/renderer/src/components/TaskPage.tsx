@@ -11148,9 +11148,7 @@ export default function TaskPage(): React.JSX.Element {
                         key={story.id}
                         type="button"
                         onClick={() => {
-                          if (story.url) {
-                            void window.api.shell.openUrl(story.url)
-                          }
+                          openLinearDetailPage(story)
                         }}
                         className="grid w-full items-center gap-3 border-b border-border/50 px-3 py-2 text-left transition-colors hover:bg-muted/40 grid-cols-[minmax(220px,1.6fr)_110px_130px_150px_120px_70px]"
                       >
