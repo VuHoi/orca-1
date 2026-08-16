@@ -464,7 +464,6 @@ export function registerLinearHandlers(): void {
       if (!name) {
         return { ok: false, error: 'View name is required' }
       }
-      const modelName = args?.modelName === 'project' ? 'project' : 'issue'
       return createCustomView(
         {
           name,

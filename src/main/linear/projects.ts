@@ -1063,7 +1063,7 @@ const CREATE_CUSTOM_VIEW_MUTATION = `
 
 export type LinearCustomViewCreateInput = {
   name: string
-  modelName: 'issue' | 'project'
+  modelName?: 'issue' | 'project'
   description?: string
   color?: string
   icon?: string
@@ -1086,7 +1086,10 @@ export async function createCustomView(
   }
   await acquire()
   try {
-    const result = await entry.client.client.rawRequest(CREATE_CUSTOM_VIEW_MUTATION, { input })
+    const result = await entry.client.client.rawRequest<
+      { customViewCreate?: { success?: boolean; customView?: Record<string, unknown> } },
+      { input: LinearCustomViewCreateInput }
+    >(CREATE_CUSTOM_VIEW_MUTATION, { input })
     const payload = result.data?.customViewCreate
     if (!payload?.success || !payload?.customView) {
       return { ok: false, error: 'Linear custom view create failed' }

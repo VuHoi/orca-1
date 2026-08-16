@@ -7,6 +7,8 @@ import {
   type PluginHostMethodSpec
 } from '../../shared/plugins/plugin-host-api'
 import type { PluginEventName } from '../../shared/plugins/plugin-manifest'
+import { readFile, readdir, stat } from 'node:fs/promises'
+import { join } from 'node:path'
 
 export type PluginWorktreeContext = {
   worktreeId: string
@@ -47,6 +49,51 @@ export type PluginHostServices = {
     set(pluginId: string, key: string, value: unknown): { ok: true } | { ok: false; error: string }
   }
   subscribeEvents(pluginId: string, events: PluginEventName[]): PluginEventName[]
+}
+
+// FORK-LOCAL: find the FIRST docs/superpowers that contains brackets/ or
+// contexts/ across: focused worktree (via services context) and Orca
+// workspace trees (~/orca/workspaces/<project>/<worktree>). Returns the
+// superpowers root so fileList/fileRead can join 'brackets'/'contexts'.
+import { execFile as execFileCb } from 'node:child_process'
+import { promisify } from 'node:util'
+const execFileAsync = promisify(execFileCb)
+import { homedir } from 'node:os'
+
+async function resolveWorkspaceDocsRoot(_services: PluginHostServices): Promise<string | null> {
+  const candidates: string[] = []
+  // 1. Orca workspace trees: ~/orca/workspaces/<proj>/<wt>
+  const wsBase = join(homedir(), 'orca', 'workspaces')
+  try {
+    for (const proj of await readdir(wsBase).catch(() => [] as string[])) {
+      const projDir = join(wsBase, proj)
+      candidates.push(projDir)
+      for (const wt of await readdir(projDir).catch(() => [] as string[])) {
+        candidates.push(join(projDir, wt))
+      }
+    }
+  } catch { /* ignore */ }
+  // 2. Registered repos via orca CLI (dev-safe: absolute prod binary like plugin)
+  try {
+    const bin = '/opt/homebrew/bin/orca'
+    const { stdout } = await execFileAsync(bin, ['repo', 'list', '--json'], { timeout: 15000 })
+    for (const r of JSON.parse(stdout)?.result?.repos ?? []) {
+      if (typeof r?.path === 'string') candidates.push(r.path)
+    }
+  } catch { /* ignore */ }
+  // 3. cwd fallback (dev plugin host runs from repo)
+  candidates.push(process.cwd())
+
+  // Prefer a root whose brackets dir is the most recently modified
+  let best: { root: string; mtime: number } | null = null
+  for (const c of candidates) {
+    const docs = join(c, 'docs', 'superpowers')
+    try {
+      const st = await stat(join(docs, 'brackets'))
+      if (st.isDirectory() && (!best || st.mtimeMs > best.mtime)) best = { root: docs, mtime: st.mtimeMs }
+    } catch { /* no brackets here */ }
+  }
+  return best?.root ?? null
 }
 
 export type BoundPluginHostMethod = {
@@ -112,6 +159,40 @@ const HANDLERS = new Map<string, BoundPluginHostMethod>([
     const { title, body } = params as { title: string; body?: string }
     return services.dispatchPluginNotification({ pluginId, title, body })
   }),
+  // FORK-LOCAL (Wakii): workspace fs reads (brackets/contexts only) for panels.
+  definePluginMethod('workspace.fileList', async (params, { services }) => {
+    const { dir } = params as { dir: 'brackets' | 'contexts' }
+    const root = await resolveWorkspaceDocsRoot(services)
+    if (!root) return { files: [] }
+    const target = join(root, dir)
+    let entries: string[] = []
+    try { entries = await readdir(target) } catch { return { files: [] } }
+    const files = await Promise.all(entries.filter(f => f.endsWith('.md')).map(async f => {
+      const st = await stat(join(target, f)).catch(() => null)
+      const text = await readFile(join(target, f), 'utf8').catch(() => '')
+      const hm = text.match(/^#\s+Story:\s*([A-Za-z]+-\d+)\s*[—–-]\s*(.+)$/m)
+      return {
+        name: f,
+        linear: hm?.[1] ?? null,
+        title: (hm?.[2] ?? f.replace(/\.md$/, '')).slice(0, 80),
+        mtime: st?.mtimeMs ?? 0
+      }
+    }))
+    files.sort((a, b) => b.mtime - a.mtime)
+    return { files: files.slice(0, 200) }
+  }),
+
+  definePluginMethod('workspace.fileRead', async (params, { services }) => {
+    const { dir, name } = params as { dir: 'brackets' | 'contexts'; name: string }
+    if (name.includes('..') || name.includes('/')) {
+      throw new Error('invalid file name')
+    }
+    const root = await resolveWorkspaceDocsRoot(services)
+    if (!root) throw new Error('no workspace root')
+    const content = await readFile(join(root, dir, name), 'utf8')
+    return { content: content.slice(0, 256 * 1024) }
+  }),
+
   definePluginMethod('storage.get', async (params, { pluginId, services }) => {
     const { key } = params as { key: string }
     return { value: services.storage.get(pluginId, key) ?? null }

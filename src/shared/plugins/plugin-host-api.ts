@@ -70,6 +70,25 @@ export const PLUGIN_STORAGE_TOTAL_MAX_BYTES = 5 * 1024 * 1024
 export const PLUGIN_STORAGE_KEY_LIMIT = 1024
 
 const storageGetParams = z.object({ key: storageKeySchema })
+// FORK-LOCAL (Wakii): workspace filesystem reads scoped to superpowers docs
+// (brackets + contexts). Panel autocomplete reads these DIRECTLY — no worker hop.
+const workspaceFileListParams = z.object({
+  dir: z.enum(['brackets', 'contexts']).default('brackets')
+})
+const workspaceFileListResult = z.object({
+  files: z.array(z.object({
+    name: z.string(),
+    linear: z.string().nullable(),
+    title: z.string(),
+    mtime: z.number()
+  })).max(200)
+})
+const workspaceFileReadParams = z.object({
+  dir: z.enum(['brackets', 'contexts']).default('brackets'),
+  name: z.string().min(1).max(128)
+})
+const workspaceFileReadResult = z.object({ content: z.string().max(PLUGIN_STORAGE_VALUE_MAX_BYTES) })
+
 const storageGetResult = z.object({ value: pluginJsonValueSchema })
 const storageSetParams = z.object({ key: storageKeySchema, value: pluginJsonValueSchema })
 const storageSetResult = z.object({ ok: z.literal(true) })
@@ -120,6 +139,26 @@ const spec = <P extends z.ZodTypeAny, R extends z.ZodTypeAny>(
 ): PluginHostMethodSpec => ({ ...entry, stability: 'experimental' })
 
 export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
+  spec({
+    name: 'workspace.fileList',
+    since: '1.1-fork',
+    scope: 'active-worktree',
+    capability: 'workspace:read',
+    mutation: false,
+    panel: true,
+    params: workspaceFileListParams,
+    result: workspaceFileListResult
+  }),
+  spec({
+    name: 'workspace.fileRead',
+    since: '1.1-fork',
+    scope: 'active-worktree',
+    capability: 'workspace:read',
+    mutation: false,
+    panel: true,
+    params: workspaceFileReadParams,
+    result: workspaceFileReadResult
+  }),
   spec({
     name: 'workspace.readContext',
     since: '1.0',
