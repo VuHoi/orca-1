@@ -89,6 +89,16 @@ const workspaceFileReadParams = z.object({
 })
 const workspaceFileReadResult = z.object({ content: z.string().max(PLUGIN_STORAGE_VALUE_MAX_BYTES) })
 
+// FORK-LOCAL: plan progress mọi SF worktree — panel gọi trực tiếp (main process,
+// KHÔNG qua worker lazy-spawn — hết vấn đề worker chết sau restart)
+const workspacePlanProgressParams = z.object({}).strict().optional()
+const workspacePlanProgressResult = z.object({
+  progress: z.record(z.string(), z.object({
+    plan: z.string(), done: z.number(), total: z.number(),
+    pct: z.number(), est: z.boolean().optional()
+  }))
+})
+
 const storageGetResult = z.object({ value: pluginJsonValueSchema })
 const storageSetParams = z.object({ key: storageKeySchema, value: pluginJsonValueSchema })
 const storageSetResult = z.object({ ok: z.literal(true) })
@@ -158,6 +168,16 @@ export const PLUGIN_HOST_API_V0: readonly PluginHostMethodSpec[] = [
     panel: true,
     params: workspaceFileReadParams,
     result: workspaceFileReadResult
+  }),
+  spec({
+    name: 'workspace.planProgress',
+    since: '1.1-fork',
+    scope: 'active-worktree',
+    capability: 'workspace:read',
+    mutation: false,
+    panel: true,
+    params: workspacePlanProgressParams,
+    result: workspacePlanProgressResult
   }),
   spec({
     name: 'workspace.readContext',

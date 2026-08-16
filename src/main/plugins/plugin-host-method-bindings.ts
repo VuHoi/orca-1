@@ -78,7 +78,7 @@ async function resolveWorkspaceDocsRoot(_services: PluginHostServices): Promise<
     const bin = '/opt/homebrew/bin/orca'
     const { stdout } = await execFileAsync(bin, ['repo', 'list', '--json'], { timeout: 15000 })
     for (const r of JSON.parse(stdout)?.result?.repos ?? []) {
-      if (typeof r?.path === 'string') candidates.push(r.path)
+      if (typeof r?.path === 'string') { candidates.push(r.path) }
     }
   } catch { /* ignore */ }
   // 3. cwd fallback (dev plugin host runs from repo)
@@ -90,7 +90,7 @@ async function resolveWorkspaceDocsRoot(_services: PluginHostServices): Promise<
     const docs = join(c, 'docs', 'superpowers')
     try {
       const st = await stat(join(docs, 'brackets'))
-      if (st.isDirectory() && (!best || st.mtimeMs > best.mtime)) best = { root: docs, mtime: st.mtimeMs }
+      if (st.isDirectory() && (!best || st.mtimeMs > best.mtime)) { best = { root: docs, mtime: st.mtimeMs } }
     } catch { /* no brackets here */ }
   }
   return best?.root ?? null
@@ -160,10 +160,55 @@ const HANDLERS = new Map<string, BoundPluginHostMethod>([
     return services.dispatchPluginNotification({ pluginId, title, body })
   }),
   // FORK-LOCAL (Wakii): workspace fs reads (brackets/contexts only) for panels.
+  // FORK-LOCAL: plan progress mọi SF worktree — panel trực tiếp (no lazy worker)
+  definePluginMethod('workspace.planProgress', async () => {
+    const progress: Record<string, { plan: string; done: number; total: number; pct: number; est?: boolean }> = {}
+    const wsBase = join(homedir(), 'orca', 'workspaces')
+    let projects: string[] = []
+    try { projects = await readdir(wsBase) } catch { return { progress } }
+    for (const proj of projects) {
+      const projDir = join(wsBase, proj)
+      let wts: string[] = []
+      try { wts = await readdir(projDir) } catch { continue }
+      for (const wt of wts) {
+        if (!wt.startsWith('sf-')) { continue }
+        const wtPath = join(projDir, wt)
+        const plansDir = join(wtPath, 'docs', 'superpowers', 'plans')
+        let ents: string[] = []
+        try { ents = await readdir(plansDir) } catch { continue }
+        // plan mới nhất khớp sf-<n>
+        const n = (wt.match(/^sf-(\d+)/) || [])[1]
+        if (!n) { continue }
+        const matching = ents.filter(f => f.endsWith('.md') && f.includes(`-sf${n}-`)).sort()
+        if (!matching.length) { continue }
+        const f = matching.at(-1)
+        const text = await readFile(join(plansDir, f), 'utf8').catch(() => '')
+        const done = (text.match(/- \[x\]/g) || []).length
+        const todo = (text.match(/- \[ \]/g) || []).length
+        if (done + todo === 0) { continue }
+        let eff = done
+        let est = false
+        if (done === 0 && todo > 0) {
+          // commit-based estimate (execFile is sync-free: use execFileAsync below)
+          try {
+            const { promisify } = await import('node:util')
+            const efA = promisify(execFileCb)
+            const { stdout } = await efA('git', ['-C', wtPath, 'rev-list', '--count', 'HEAD', '--not', '--glob=refs/heads/story/*'], { timeout: 5000 }).catch(() => ({ stdout: '0' }))
+            const commits = Number.parseInt((stdout || '0').trim(), 10)
+            eff = Math.min(commits, todo)
+            est = eff > 0
+          } catch { eff = 0 }
+        }
+        progress[wt] = { plan: f, done: eff, total: done + todo, pct: Math.round((eff / (done + todo)) * 100), est }
+      }
+    }
+    return { progress }
+  }),
+
   definePluginMethod('workspace.fileList', async (params, { services }) => {
     const { dir } = params as { dir: 'brackets' | 'contexts' }
     const root = await resolveWorkspaceDocsRoot(services)
-    if (!root) return { files: [] }
+    if (!root) { return { files: [] } }
     const target = join(root, dir)
     let entries: string[] = []
     try { entries = await readdir(target) } catch { return { files: [] } }
@@ -188,7 +233,7 @@ const HANDLERS = new Map<string, BoundPluginHostMethod>([
       throw new Error('invalid file name')
     }
     const root = await resolveWorkspaceDocsRoot(services)
-    if (!root) throw new Error('no workspace root')
+    if (!root) { throw new Error('no workspace root') }
     const content = await readFile(join(root, dir, name), 'utf8')
     return { content: content.slice(0, 256 * 1024) }
   }),
