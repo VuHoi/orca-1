@@ -1,0 +1,17 @@
+{
+  "manifestVersion": 1,
+  "id": "panel-storage-probe",
+  "publisher": "local",
+  "name": "Panel Storage Probe",
+  "version": "0.1.0",
+  "description": "Dev-only probe: verifies storage.get is callable from a sandboxed panel (patch panel-storage-read).",
+  "engines": { "orca": ">=1.4.0" },
+  "pluginApi": 1,
+  "main": "main.mjs",
+  "contributes": {
+    "panels": [
+      { "id": "probe", "title": "Storage Probe", "icon": "flask-conical", "entry": "panel.html" }
+    ]
+  },
+  "capabilities": [{ "kind": "storage" }, { "kind": "notifications:show" }]
+}

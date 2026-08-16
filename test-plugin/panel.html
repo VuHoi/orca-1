@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { margin: 0; padding: 12px; font-family: system-ui, sans-serif; font-size: 13px;
+             color: var(--foreground, #ddd); background: var(--background, transparent); }
+      button { margin: 6px 0; padding: 6px 10px; border: 1px solid var(--border, #555);
+               border-radius: 6px; background: var(--secondary, #2a2a2a); color: var(--foreground, #ddd);
+               cursor: pointer; font: inherit; }
+      .status { margin-top: 10px; min-height: 3em; color: var(--muted-foreground, #999); white-space: pre-wrap; }
+      .ok { color: #7ee787; } .err { color: #f85149; }
+    </style>
+  </head>
+  <body>
+    <h3>storage.get panel probe</h3>
+    <p>1. Worker seeds storage (command) → 2. Panel reads it via bridge.</p>
+    <button id="read">storage.get from PANEL</button>
+    <p class="status" id="status">idle</p>
+    <script>
+      'use strict'
+      var seq = 0
+      var pending = {}
+      var statusEl = document.getElementById('status')
+
+      function call(action, params) {
+        return new Promise(function (resolve) {
+          var requestId = 'req-' + ++seq
+          pending[requestId] = resolve
+          window.parent.postMessage(
+            { type: 'orca-panel-action', requestId: requestId, action: action, params: params }, '*'
+          )
+        })
+      }
+      window.addEventListener('message', function (event) {
+        var data = event.data
+        if (!data || data.type !== 'orca-panel-action-result') return
+        var resolve = pending[data.requestId]
+        if (!resolve) return
+        delete pending[data.requestId]
+        resolve(data)
+      })
+
+      document.getElementById('read').addEventListener('click', function () {
+        statusEl.textContent = 'calling storage.get...'
+        statusEl.className = 'status'
+        call('storage.get', { key: 'probe.key' }).then(function (result) {
+          if (result.ok) {
+            statusEl.textContent = '✓ PANEL storage.get OK — value: ' + JSON.stringify(result.value)
+            statusEl.className = 'status ok'
+          } else {
+            statusEl.textContent = '✗ ' + (result.errorCode || '') + ': ' + (result.error || '')
+            statusEl.className = 'status err'
+          }
+        })
+      })
+    </script>
+  </body>
+</html>
