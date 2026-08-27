@@ -39,3 +39,8 @@ export function findGithubIssueWorkspaceAttachment(
 ): Worktree | null {
   return findGithubWorkItemWorkspaceAttachment(worktrees, repoId, 'issue', issueNumber)
 }
+
+/** FORK-LOCAL (Wakii Stories): display label for an attached worktree. */
+export function getGithubWorkItemWorkspaceAttachmentLabel(worktree: Worktree): string {
+  return worktree.branch ?? worktree.displayName ?? 'attached workspace'
+}

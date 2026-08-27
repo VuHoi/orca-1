@@ -182,6 +182,7 @@ const HANDLERS = new Map<string, BoundPluginHostMethod>([
         const matching = ents.filter(f => f.endsWith('.md') && f.includes(`-sf${n}-`)).sort()
         if (!matching.length) { continue }
         const f = matching.at(-1)
+        if (!f) { continue }
         const text = await readFile(join(plansDir, f), 'utf8').catch(() => '')
         const done = (text.match(/- \[x\]/g) || []).length
         const todo = (text.match(/- \[ \]/g) || []).length
@@ -199,7 +200,7 @@ const HANDLERS = new Map<string, BoundPluginHostMethod>([
             est = eff > 0
           } catch { eff = 0 }
         }
-        progress[wt] = { plan: f, done: eff, total: done + todo, pct: Math.round((eff / (done + todo)) * 100), est }
+        progress[wt] = { plan: f as string, done: eff, total: done + todo, pct: Math.round((eff / (done + todo)) * 100), est }
       }
     }
     return { progress }

@@ -124,3 +124,8 @@ export function findLinearIssueWorkspaceAttachmentInIndex(
   const candidates = index.get(identifier)
   return candidates ? findScopedAttachment(candidates, issue) : null
 }
+
+/** FORK-LOCAL (Wakii Stories): display label for an attached worktree. */
+export function getLinearIssueWorkspaceAttachmentLabel(worktree: Worktree): string {
+  return worktree.branch ?? worktree.displayName ?? 'attached workspace'
+}
