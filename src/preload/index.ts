@@ -5000,7 +5000,7 @@ const api = {
       callback: (data: {
         requestId: string
         targetId: string
-        kind: 'passphrase' | 'password'
+        kind: 'passphrase' | 'password' | 'keyboard-interactive'
         detail: string
       }) => void
     ): (() => void) => {
@@ -5009,7 +5009,7 @@ const api = {
         data: {
           requestId: string
           targetId: string
-          kind: 'passphrase' | 'password'
+          kind: 'passphrase' | 'password' | 'keyboard-interactive'
           detail: string
         }
       ) => callback(data)
