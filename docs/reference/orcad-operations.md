@@ -86,10 +86,12 @@ the daemon and every live terminal after the graceful window.
 
 Before a cgroup-wide stop, obtain a fresh `orca terminal list --json` result for the target
 environment. A safe empty census is untruncated, has an explicit `hostScope`, covers every
-expected execution host, has no `omittedHostIds`, and lists no terminals. Missing scope,
-truncation, an omitted host, a failed request or lost contact makes the result `unverifiable`:
-defer the stop. Do not admit new work after the census. Orca does not yet provide an atomic
-census-and-stop fence.
+execution host affected by the stop, and lists no terminals on those hosts. Every
+`omittedHostIds` entry must be explicitly accounted for outside the target service's execution
+boundary. A separately paired runtime is outside that boundary; local execution and SSH hosts
+reached through this runtime are not. An affected or unknown omission, missing scope,
+truncation, a failed request or lost contact makes the result `unverifiable`: defer the stop. Do
+not admit new work after the census. Orca does not yet provide an atomic census-and-stop fence.
 
 ### Who supervises orcad
 
