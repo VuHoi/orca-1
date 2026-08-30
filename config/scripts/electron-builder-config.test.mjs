@@ -656,6 +656,7 @@ describe('electron-builder config', () => {
         await expect(
           readFile(join(resourcesDir, 'app.asar.unpacked', 'out', 'package.json'), 'utf8')
         ).resolves.toContain('"version": "9.9.9"')
+        await expect(readFile(join(resourcesDir, 'package-type'), 'utf8')).resolves.toBe('AppImage')
       } finally {
         await rm(root, { recursive: true, force: true })
       }
@@ -693,6 +694,18 @@ describe('electron-builder config', () => {
       )
       for (const target of linuxTargets.filter((entry) => RECOVERABLE_TARGETS.has(entry))) {
         expect(source).toContain(`value === '${target}'`)
+      }
+    })
+
+    it('keeps the pinned FpmTarget overwrite for configured deb and rpm artifacts', async () => {
+      const source = await readFile(
+        require.resolve('app-builder-lib/out/targets/FpmTarget'),
+        'utf8'
+      )
+
+      expect(source).toContain('path.join(resourceDir, "package-type"), target')
+      for (const target of RECOVERABLE_TARGETS) {
+        expect(electronBuilderConfig[target]).toBeDefined()
       }
     })
   })

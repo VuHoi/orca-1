@@ -50,9 +50,10 @@ describe('headless serve shutdown PR gate', () => {
     ).toThrow('Missing closing code fence for orca-serve.service')
   })
 
-  it('packages an x64 AppImage before running the Docker signal oracle', () => {
+  it('packages Linux artifacts before running the Docker signal oracle', () => {
     const steps = workflow.jobs.package.steps
     const packageStep = steps.find((step) => step.name === 'Package unpacked app')
+    const markerStep = steps.find((step) => step.name === 'Verify root-package marker payloads')
     const shutdownStep = steps.find((step) => step.name === 'Verify headless serve signal shutdown')
     const launcherShutdownStep = steps.find(
       (step) => step.name === 'Verify extracted launcher serve signal shutdown'
@@ -61,7 +62,11 @@ describe('headless serve shutdown PR gate', () => {
       (step) => step.name === 'Verify AppImage CLI registration and serve signal shutdown'
     )
 
-    expect(packageStep.run).toContain('--linux AppImage --x64 --publish never')
+    expect(workflow.jobs.package['timeout-minutes']).toBe(60)
+    expect(packageStep.run).toContain('--linux AppImage deb rpm --x64 --publish never')
+    expect(markerStep.run).toContain('dpkg-deb --fsys-tarfile')
+    expect(markerStep.run).toContain('rpm2cpio')
+    expect(steps.indexOf(markerStep)).toBeGreaterThan(steps.indexOf(packageStep))
     expect(shutdownStep.run).toBe(
       'node config/scripts/run-headless-serve-shutdown-docker.mjs --appimage dist/orca-linux.AppImage'
     )
@@ -142,6 +147,7 @@ describe('headless serve shutdown PR gate', () => {
 
   it('gives the original AppImage enough bounded extraction space', () => {
     expect(shutdownDockerRunner).toContain("'/tmp:rw,nosuid,nodev,exec,size=1g'")
+    expect(steps.indexOf(shutdownStep)).toBeGreaterThan(steps.indexOf(markerStep))
   })
 
   it('keeps owned Xvfb alive during the documented systemd graceful stop', () => {

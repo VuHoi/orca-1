@@ -250,6 +250,10 @@ module.exports = {
     if (!existsSync(resourcesDir)) {
       throw new Error(`Missing packaged resources directory: ${resourcesDir}`)
     }
+    // FpmTarget replaces this with deb/rpm while building those artifacts from the shared app tree.
+    if (context.electronPlatformName === 'linux') {
+      writeFileSync(join(resourcesDir, 'package-type'), 'AppImage')
+    }
     if (context.electronPlatformName === 'darwin') {
       const architectureByEnum = { 1: 'x64', 3: 'arm64' }
       const architecture = architectureByEnum[context.arch]
