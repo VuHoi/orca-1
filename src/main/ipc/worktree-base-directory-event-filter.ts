@@ -113,10 +113,23 @@ function isHeadLogParts(parts: string[], offset: number): boolean {
 // Why: `git rebase --quit` deletes this dir without rewriting HEAD or logs/HEAD, so it is
 // the only signal that a rebase ended; route it to the head-identity re-read (which now
 // carries rebase state) instead of leaving the "(rebasing)" badge stale until a poll.
-const GIT_REBASE_STATE_DIRS = new Set(['rebase-merge', 'rebase-apply'])
+// Match only the dir itself and its identity sentinel: interactive rebases rewrite
+// msgnum/done/patch per picked commit, and routing that churn would re-read head
+// identities for every worktree of the repo on each pick.
+const GIT_REBASE_STATE_SENTINEL_BY_DIR = new Map([
+  ['rebase-merge', 'head-name'],
+  ['rebase-apply', 'rebasing']
+])
 
 function isRebaseStateParts(parts: string[], offset: number): boolean {
-  return parts.length > offset && GIT_REBASE_STATE_DIRS.has(parts[offset])
+  const sentinel =
+    parts.length > offset ? GIT_REBASE_STATE_SENTINEL_BY_DIR.get(parts[offset]) : undefined
+  if (sentinel === undefined) {
+    return false
+  }
+  return (
+    parts.length === offset + 1 || (parts.length === offset + 2 && parts[offset + 1] === sentinel)
+  )
 }
 
 function allRepoIds(target: WorktreeBaseWatchTarget): string[] {
