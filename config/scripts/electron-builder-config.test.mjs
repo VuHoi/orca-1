@@ -281,6 +281,22 @@ describe('electron-builder config', () => {
     })
   })
 
+  it('validates each AppImage before electron-builder publishes it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'orca-electron-builder-appimage-'))
+    try {
+      const appImage = join(root, 'orca-linux.AppImage')
+      await writeFile(appImage, 'not an ELF')
+
+      expect(() =>
+        electronBuilderConfig.artifactBuildCompleted({ file: appImage, arch: 1 })
+      ).toThrow(/ELF header is outside/)
+      expect(() =>
+        electronBuilderConfig.artifactBuildCompleted({ file: join(root, 'orca-ide.deb') })
+      ).not.toThrow()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
   it('uses a distinct AppImage name for Linux arm64 release uploads', () => {
     const configPath = require.resolve('../electron-builder.config.cjs')
     const original = process.env.ORCA_LINUX_ARM64_RELEASE

@@ -226,9 +226,9 @@ module.exports = {
     'node_modules/yaml/**',
     'node_modules/sherpa-onnx*/**'
   ],
-  artifactBuildCompleted: ({ file }) => {
+  artifactBuildCompleted: ({ file, arch }) => {
     if (file.endsWith('.AppImage')) {
-      verifyStaticAppImagePackage(file)
+      verifyStaticAppImagePackage(file, arch)
     }
   },
   afterPack: async (context) => {
