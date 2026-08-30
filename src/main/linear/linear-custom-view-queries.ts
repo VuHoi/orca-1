@@ -167,3 +167,69 @@ export async function listCustomViewProjects(
     force
   )
 }
+
+const CREATE_CUSTOM_VIEW_MUTATION = `
+  mutation WakiiLinearCustomViewCreate($input: CustomViewCreateInput!) {
+    customViewCreate(input: $input) {
+      success
+      customView {
+        id
+        name
+        description
+        modelName
+        color
+        icon
+        shared
+        slugId
+        createdAt
+        updatedAt
+        team { id name key }
+      }
+    }
+  }
+`
+
+export type LinearCustomViewCreateInput = {
+  name: string
+  modelName?: 'issue' | 'project'
+  description?: string
+  color?: string
+  icon?: string
+  shared?: boolean
+  filters?: unknown
+  filterData?: unknown
+  teamId?: string
+  organizationId?: string
+  subType?: string
+  presentableCards?: unknown
+}
+
+export async function createCustomView(
+  input: LinearCustomViewCreateInput,
+  workspaceId?: string | null
+): Promise<{ ok: true; customView: Record<string, unknown> } | { ok: false; error: string }> {
+  const entry = getClients(workspaceId)[0]
+  if (!entry) {
+    return { ok: false, error: 'Not connected to Linear' }
+  }
+  await acquire()
+  try {
+    const result = await entry.client.client.rawRequest<
+      { customViewCreate?: { success?: boolean; customView?: Record<string, unknown> } },
+      { input: LinearCustomViewCreateInput }
+    >(CREATE_CUSTOM_VIEW_MUTATION, { input })
+    const payload = result.data?.customViewCreate
+    if (!payload?.success || !payload?.customView) {
+      return { ok: false, error: 'Linear custom view create failed' }
+    }
+    return { ok: true, customView: payload.customView as Record<string, unknown> }
+  } catch (error) {
+    if (isAuthError(error)) {
+      clearToken(entry.workspace.id)
+      throw error
+    }
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  } finally {
+    release()
+  }
+}

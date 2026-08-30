@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import {
+  createCustomView,
   getCustomView,
   listCustomViewIssues,
   listCustomViewProjects,
@@ -97,3 +98,39 @@ export function registerLinearCustomViewHandlers(): void {
     }
   )
 }
+  ipcMain.handle(
+    'linear:createCustomView',
+    async (
+      _event,
+      args: {
+        name: string
+        modelName?: 'issue' | 'project'
+        description?: string
+        color?: string
+        icon?: string
+        shared?: boolean
+        filters?: unknown
+        filterData?: unknown
+        teamId?: string
+        workspaceId?: string
+      }
+    ) => {
+      if (typeof args?.name !== 'string' || !args.name.trim()) {
+        return { ok: false, error: 'Invalid custom view name' }
+      }
+      return createCustomView(
+        {
+          name: args.name.trim(),
+          modelName: args.modelName,
+          description: args.description,
+          color: args.color,
+          icon: args.icon,
+          shared: args.shared,
+          filters: args.filters,
+          filterData: args.filterData,
+          teamId: args.teamId
+        },
+        args.workspaceId
+      )
+    }
+  )

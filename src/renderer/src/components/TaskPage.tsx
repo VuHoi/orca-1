@@ -1,5 +1,8 @@
 /* eslint-disable max-lines -- Why: repo selector, task-source controls, and task list stay co-located so their wiring reads in one place. */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useTaskPageGitLabListState } from '@/components/task-page/hooks/use-task-page-gitlab-list-state'
+import { useTaskPageGitHubListState } from '@/components/task-page/hooks/use-task-page-github-list-state'
+import { useTaskPageGitLabFetch } from '@/components/task-page/hooks/use-task-page-gitlab-fetch'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -210,9 +213,7 @@ import { JiraIcon } from '@/components/icons/JiraIcon'
 import { cn } from '@/lib/utils'
 import {
   getLinkedWorkItemSuggestedName,
-  getLinkedWorkItemWorkspaceName,
-  PER_REPO_FETCH_LIMIT,
-  CROSS_REPO_DISPLAY_LIMIT
+  getLinkedWorkItemWorkspaceName
 } from '@/lib/new-workspace'
 import type { LinkedWorkItemSummary } from '@/lib/new-workspace'
 import { getTaskPresetQuery } from '../../../shared/task-preset-query'
@@ -246,7 +247,6 @@ import {
 } from '@/components/task-page-cache-selectors'
 import { shouldHideTaskPageListChrome } from '@/components/task-page-list-chrome-visibility'
 import {
-  buildTaskPageGitHubResumeContextKey,
   taskPageGitHubResumeCache,
   TASK_PAGE_GITHUB_RESUME_FRESH_MS
 } from '@/components/task-page-github-resume-cache'
@@ -255,7 +255,6 @@ import {
   applyWindowPageLimit,
   buildSelectedReposKey,
   deriveAdvertisedTotalPages,
-  getTaskPagePerRepoLimit,
   resolveEmptyPageOutcome,
   taskPageToGitHubApiPage
 } from '@/components/task-page-work-item-pagination'
@@ -356,7 +355,7 @@ import type {
   GitHubPRMergeMethod
 } from '../../../shared/github/pull-request-types'
 import type { GitHubWorkItem } from '../../../shared/github/work-item-types'
-import type { GitLabProjectRef, GitLabTodo, GitLabWorkItem } from '../../../shared/gitlab-types'
+import type { GitLabProjectRef, GitLabWorkItem } from '../../../shared/gitlab-types'
 import type { GitHubIssueUpdate } from '../../../shared/issue-mutation-types'
 import type {
   JiraCreateField,
@@ -398,13 +397,11 @@ import {
   useTeamLabels
 } from '@/hooks/useIssueMetadata'
 import {
-  linearCreateProject,
   linearCreateIssue,
   linearGetIssue,
-  linearTeamStates,
-  linearUpdateIssue,
-  linearListProjects
-} from '@/runtime/runtime-linear-client'
+  linearUpdateIssue
+} from '@/runtime/runtime-linear-issue-mutations'
+import { linearCreateProject, linearListProjects, linearTeamStates } from '@/runtime/runtime-linear-project-client'
 import {
   jiraCreateIssue,
   jiraGetIssue,
@@ -442,8 +439,6 @@ import {
   getLinearViewOptions,
   getSourceOptions,
   type GitHubTaskKind,
-  type GitLabIssueFilter,
-  type GitLabTaskFilter,
   type JiraPresetId,
   LinearIcon,
   type LinearDisplayProperty,
@@ -473,15 +468,6 @@ import {
 import { formatPRDelta } from '@/components/task-page-pr-delta-summary'
 import { getPageNumbers } from '@/components/task-page-pagination-page-numbers'
 
-function isGitLabMRFilter(value: GitLabTaskFilter | GitLabIssueFilter): value is GitLabTaskFilter {
-  return value === 'opened' || value === 'merged' || value === 'closed' || value === 'all'
-}
-
-function isGitLabIssueFilter(
-  value: GitLabTaskFilter | GitLabIssueFilter
-): value is GitLabIssueFilter {
-  return value === 'opened' || value === 'assigned-to-me'
-}
 
 const TASK_SEARCH_DEBOUNCE_MS = 300
 const LINEAR_ITEM_LIMIT = 36
@@ -3638,137 +3624,95 @@ export default function TaskPage(): React.JSX.Element {
   const projectModeVisible = taskSource === 'github'
   const [githubMode, setGithubMode] = useState<'items' | 'project'>('items')
 
-  // ── GitLab task-source state ──────────────────────────────────────
-  // Why: parallel to Linear's slim per-source state — skips workItemsCache and cross-repo aggregation; fetches directly via window.api.gl for the primary repo.
-  const [gitlabFilter, setGitlabFilter] = useState<GitLabTaskFilter | GitLabIssueFilter>('opened')
-  const [gitlabItems, setGitlabItems] = useState<GitLabWorkItem[]>([])
-  const [gitlabLoading, setGitlabLoading] = useState(false)
-  const [gitlabError, setGitlabError] = useState<string | null>(null)
-  const [gitlabRefreshNonce, setGitlabRefreshNonce] = useState(0)
-  // Why: separate from gitlabItems so the dialog target survives a list refresh that removes the item from the visible filter (e.g. closing an MR).
-  const [gitlabDialogItem, setGitlabDialogItem] = useState<GitLabWorkItem | null>(null)
-
-  // Why: GitLab tab has two sub-views — the project MR/issue list and the user's cross-project Todos (a separate stream).
-  const [gitlabView, setGitlabView] = useState<'issues' | 'mrs' | 'todos'>('mrs')
-  const [gitlabTodos, setGitlabTodos] = useState<GitLabTodo[]>([])
-  const [gitlabTodosLoading, setGitlabTodosLoading] = useState(false)
-  const gitlabEmptyState = useMemo(
-    () =>
-      getRepoBackedTaskEmptyState({
-        provider: 'gitlab',
-        selectedRepoCount: selectedRepos.length,
-        gitlabView
-      }),
-    [gitlabView, selectedRepos.length]
-  )
-
-  const gitlabFilterIsValid =
-    gitlabView === 'issues'
-      ? isGitLabIssueFilter(gitlabFilter)
-      : gitlabView === 'mrs'
-        ? isGitLabMRFilter(gitlabFilter)
-        : true
-  const activeGitlabFilter = gitlabFilterIsValid ? gitlabFilter : 'opened'
-  // Why: Issues and MRs expose different filter sets; repair before commit so fetch effects never run glab with a stale filter from the other view.
-  if (!gitlabFilterIsValid) {
-    setGitlabFilter('opened')
-  }
-
-  const displayedGitLabItems = useMemo(() => {
-    if (gitlabView === 'issues') {
-      return gitlabItems.filter((item) => item.type === 'issue')
-    }
-    if (gitlabView === 'mrs') {
-      return gitlabItems.filter((item) => item.type === 'mr')
-    }
-    return gitlabItems
-  }, [gitlabItems, gitlabView])
-
-  const [taskSearchInput, setTaskSearchInput] = useState(initialTaskQuery)
-  const [appliedTaskSearch, setAppliedTaskSearch] = useState(initialTaskQuery)
-  const taskSearchInputRef = useRef<HTMLInputElement>(null)
-  const [activeTaskPreset, setActiveTaskPreset] = useState<TaskViewPresetId | null>(
-    defaultTaskViewPreset
-  )
-  const [tasksLoading, setTasksLoading] = useState(false)
-  const [tasksRefreshing, setTasksRefreshing] = useState(false)
-  const [tasksFiltering, setTasksFiltering] = useState(false)
-  const [tasksError, setTasksError] = useState<string | null>(null)
-  // Why: per-repo failure count for the "N of M" banner; IPC rejections use tasksError instead so partial-failure and hard-reject don't double-show.
-  const [failedCount, setFailedCount] = useState(0)
-  // Why: when every refresh fails (GitHub outage/network/rate limit), attribute it to GitHub instead of showing an empty or stale list as current.
-  const [githubUnavailable, setGithubUnavailable] = useState(false)
-  const [taskRefreshNonce, setTaskRefreshNonce] = useState(0)
-  // Why: quiet success revalidate must never share taskRefreshNonce / tasksFiltering
-  // (K23) — membership exits and merge success refresh without filter skeletons.
-  const [quietRefreshNonce, setQuietRefreshNonce] = useState(0)
-  const [githubViewerLogin, setGitHubViewerLogin] = useState<string | null>(null)
-  // Why: the fetch effect uses this to detect when a nonce bump is from the
-  // user clicking the refresh button (force=true) vs. re-running for any
-  // other reason — e.g. a repo change while the nonce happens to be > 0.
-  const lastFetchedNonceRef = useRef(-1)
-  // Why: invalidation-nonce analog of lastFetchedNonceRef; a preference flip must force past fetch-dedupe or the fan-out collapses onto a stale in-flight request from the pre-flip source.
-  const lastFetchedInvalidationNonceRef = useRef(0)
-  const paginationGenerationRef = useRef(0)
-  // Why: entering Tasks with fresh cache still verifies remote status once, reconciled into existing rows to avoid a full table shuffle.
-  const landingGitHubRefreshKeysRef = useRef<ReadonlySet<string>>(new Set())
-  // Why: split the display budget across repos so one provider page maps to one UI page without truncating rows later pages can't return.
-  const githubPerRepoPageLimit = getTaskPagePerRepoLimit(
-    selectedRepos.length,
-    PER_REPO_FETCH_LIMIT,
-    CROSS_REPO_DISPLAY_LIMIT
-  )
-  const githubPageSize = githubPerRepoPageLimit * Math.max(1, selectedRepos.length)
-  const githubResumeContextKey = buildTaskPageGitHubResumeContextKey({
+  const {
+    setGitlabFilter,
+    gitlabItems,
+    setGitlabItems,
+    gitlabLoading,
+    setGitlabLoading,
+    gitlabError,
+    setGitlabError,
+    gitlabRefreshNonce,
+    setGitlabRefreshNonce,
+    gitlabDialogItem,
+    setGitlabDialogItem,
+    gitlabView,
+    setGitlabView,
+    gitlabIssuePage,
+    setGitlabIssuePage,
+    setGitlabIssueTotalPages,
+    setGitlabIssueLoadingTargetPage,
+    gitlabTodos,
+    setGitlabTodos,
+    gitlabTodosLoading,
+    setGitlabTodosLoading,
+    gitlabEmptyState,
+    activeGitlabFilter,
+    displayedGitLabItems
+  } = useTaskPageGitLabListState({ taskSource, selectedRepos, selectedReposKey })
+  const {
+    taskSearchInput,
+    setTaskSearchInput,
+    appliedTaskSearch,
+    setAppliedTaskSearch,
+    taskSearchInputRef,
+    activeTaskPreset,
+    setActiveTaskPreset,
+    tasksLoading,
+    setTasksLoading,
+    tasksRefreshing,
+    setTasksRefreshing,
+    tasksFiltering,
+    setTasksFiltering,
+    tasksError,
+    setTasksError,
+    failedCount,
+    setFailedCount,
+    githubUnavailable,
+    setGithubUnavailable,
+    taskRefreshNonce,
+    setTaskRefreshNonce,
+    quietRefreshNonce,
+    setQuietRefreshNonce,
+    githubViewerLogin,
+    setGitHubViewerLogin,
+    lastFetchedNonceRef,
+    lastFetchedInvalidationNonceRef,
+    paginationGenerationRef,
+    landingGitHubRefreshKeysRef,
+    githubPerRepoPageLimit,
+    githubPageSize,
+    githubResumeContextKey,
+    pages,
+    setPages,
+    currentPage,
+    setCurrentPage,
+    pagesRef,
+    currentPageRef,
+    githubResumeConsumedRef,
+    githubResumeContextRef,
+    githubListScrollRef,
+    githubListScrollTopRef,
+    pendingGithubScrollRestoreRef,
+    paginationLoading,
+    setPaginationLoading,
+    loadingTargetPage,
+    setLoadingTargetPage,
+    countedTotalPages,
+    setCountedTotalPages,
+    provenPageLimit,
+    setProvenPageLimit,
+    countedTotalPagesRef,
+    hardRefreshEpochRef,
+    fetchWorkItemsNextPage,
+    countWorkItemsAcrossRepos
+  } = useTaskPageGitHubListState({
+    initialTaskQuery,
+    defaultTaskViewPreset,
+    selectedRepos,
     selectedReposKey,
-    query: appliedTaskSearch.trim(),
-    pageSize: githubPageSize
+    getCachedWorkItems
   })
-  // Why: null entries are pages not fetched yet; numbered provider pages let a high-page click load directly without reading intermediate pages.
-  const [pages, setPages] = useState<(GitHubWorkItem[] | null)[]>(() => {
-    const trimmed = initialTaskQuery.trim()
-    const merged: GitHubWorkItem[] = []
-    for (const r of selectedRepos) {
-      const cached = getCachedWorkItems(
-        r.id,
-        githubPerRepoPageLimit,
-        trimmed,
-        r.path,
-        getTaskPageRepoSourceContext(r, 'github')
-      )
-      if (cached) {
-        merged.push(...cached)
-      }
-    }
-    if (merged.length === 0) {
-      return [[]]
-    }
-    const page0 = sortWorkItemsByNumber(merged).slice(0, githubPageSize)
-    return [page0]
-  })
-  const [currentPage, setCurrentPage] = useState(0)
-  const pagesRef = useRef(pages)
-  const currentPageRef = useRef(currentPage)
-  pagesRef.current = pages
-  currentPageRef.current = currentPage
-  const githubResumeConsumedRef = useRef(false)
-  const githubResumeContextRef = useRef('')
-  const githubListScrollRef = useRef<HTMLDivElement>(null)
-  const githubListScrollTopRef = useRef(0)
-  const pendingGithubScrollRestoreRef = useRef<number | null>(null)
-  const [paginationLoading, setPaginationLoading] = useState(false)
-  const [loadingTargetPage, setLoadingTargetPage] = useState<number | null>(null)
-  const [countedTotalPages, setCountedTotalPages] = useState<number | null>(null)
-  // Proven window-422 page limit — separate from the count so a late count
-  // can't resurrect proven-unreachable pages, nor be pinned by a speculative
-  // withdrawal (see deriveAdvertisedTotalPages).
-  const [provenPageLimit, setProvenPageLimit] = useState<number | null>(null)
-  // Why: synchronous mirror of countedTotalPages — the empty-page branch needs
-  // the committed value, not a click-time closure, and refs update immediately.
-  const countedTotalPagesRef = useRef<number | null>(null)
-  const hardRefreshEpochRef = useRef(0)
-  const fetchWorkItemsNextPage = useAppStore((s) => s.fetchWorkItemsNextPage)
-  const countWorkItemsAcrossRepos = useAppStore((s) => s.countWorkItemsAcrossRepos)
 
   useEffect(() => {
     const page = pages[currentPage]
@@ -4072,8 +4016,8 @@ export default function TaskPage(): React.JSX.Element {
     // Hard guarantee (K4): always overlay pending after reconcile so list
     // fetch clobbers never paint unprotected coordinator fields.
     setPages((current) =>
-      reconcileTaskPagePagesWithWorkItemsCache(current, selectedWorkItemsCacheEntries).map((page) =>
-        page ? (overlayPendingOnTaskPagePages([page])[0] ?? []) : null
+      reconcileTaskPagePagesWithWorkItemsCache(current, selectedWorkItemsCacheEntries).map(
+        (page) => (page ? (overlayPendingOnTaskPagePages([page])[0] ?? []) : null)
       )
     )
   }, [githubMode, selectedWorkItemsCacheEntries, taskSource])
@@ -4921,159 +4865,31 @@ export default function TaskPage(): React.JSX.Element {
     jiraTaskSourceContext
   ])
 
-  // Why: fetch GitLab Issues and MRs separately so errors stay isolated per tab (mirrors GitHub's split endpoints).
-  useEffect(() => {
-    if (taskSource !== 'gitlab') {
-      return
-    }
-    if (gitlabView === 'todos') {
-      return
-    }
-    const activeIssueFilter =
-      gitlabView === 'issues' && isGitLabIssueFilter(activeGitlabFilter) ? activeGitlabFilter : null
-    const activeMRFilter =
-      gitlabView === 'mrs' && isGitLabMRFilter(activeGitlabFilter) ? activeGitlabFilter : null
-    if (
-      (gitlabView === 'issues' && !activeIssueFilter) ||
-      (gitlabView === 'mrs' && !activeMRFilter)
-    ) {
-      return
-    }
-    // Why: folder-mode repos lack remotes to derive a GitLab project from; SSH-backed repos use the same provider-aware IPC path.
-    const eligibleRepos = selectedRepos
-    if (eligibleRepos.length === 0) {
-      setGitlabItems([])
-      setGitlabLoading(false)
-      setGitlabError(null)
-      return
-    }
-    let stale = false
-    setGitlabLoading(true)
-    setGitlabError(null)
-
-    const fetchItems =
-      gitlabView === 'issues'
-        ? (repo: (typeof eligibleRepos)[0]) => {
-            const isAssignedToMe = activeIssueFilter === 'assigned-to-me'
-            return window.api.gl
-              .listIssues({
-                repoPath: repo.path,
-                repoId: repo.id,
-                sourceContext: getTaskPageRepoSourceContext(repo, 'gitlab'),
-                state: 'opened',
-                assignee: isAssignedToMe ? '@me' : undefined,
-                limit: 50
-              })
-              .then((result) => {
-                const typed = result as {
-                  items: GitLabWorkItem[]
-                  error?: { type?: string; message: string }
-                }
-                // Why: not_found just means the repo isn't a GitLab project (mixed selection); drop it so the list shows no false errors.
-                const error = typed.error?.type === 'not_found' ? undefined : typed.error
-                return { repoId: repo.id, items: typed.items, error }
-              })
-          }
-        : (repo: (typeof eligibleRepos)[0]) =>
-            window.api.gl
-              .listMRs({
-                repoPath: repo.path,
-                repoId: repo.id,
-                sourceContext: getTaskPageRepoSourceContext(repo, 'gitlab'),
-                state: activeMRFilter ?? 'opened',
-                page: 1,
-                perPage: 50
-              })
-              .then((result) => {
-                const typed = result as {
-                  items: GitLabWorkItem[]
-                  error?: { type?: string; message: string }
-                }
-                const error = typed.error?.type === 'not_found' ? undefined : typed.error
-                return { repoId: repo.id, items: typed.items, error }
-              })
-
-    void Promise.allSettled(eligibleRepos.map(fetchItems))
-      .then((results) => {
-        if (stale) {
-          return
-        }
-        const merged: GitLabWorkItem[] = []
-        const errs: string[] = []
-        for (const r of results) {
-          if (r.status !== 'fulfilled') {
-            errs.push(r.reason instanceof Error ? r.reason.message : String(r.reason))
-            continue
-          }
-          for (const item of r.value.items) {
-            merged.push({ ...item, repoId: r.value.repoId })
-          }
-          if (r.value.error) {
-            errs.push(r.value.error.message)
-          }
-        }
-        merged.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
-        setGitlabItems(merged)
-        // Why: only banner when every eligible repo failed; a partial one would hide working rows in a mixed (non-GitLab) selection.
-        if (errs.length > 0 && merged.length === 0) {
-          setGitlabError(errs[0])
-        }
-      })
-      .finally(() => {
-        if (!stale) {
-          setGitlabLoading(false)
-        }
-      })
-    return () => {
-      stale = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- selectedReposKey covers every selectedRepos field read above (see its GitHub-scoped-context note); keying off the array ref would re-run on every parent render.
-  }, [taskSource, gitlabView, activeGitlabFilter, gitlabRefreshNonce, selectedReposKey])
-
-  // Why: Todos fetch has its own effect — different trigger (no chip filter) and data path (gl.todos is user-scoped, not repo-scoped).
-  useEffect(() => {
-    if (taskSource !== 'gitlab' || gitlabView !== 'todos') {
-      return
-    }
-    if (!primaryRepo?.path) {
-      setGitlabTodos([])
-      setGitlabTodosLoading(false)
-      return
-    }
-    let stale = false
-    setGitlabTodosLoading(true)
-    void window.api.gl
-      .todos({
-        repoPath: primaryRepo.path,
-        repoId: primaryRepo.id,
-        sourceContext: getTaskPageRepoSourceContext(primaryRepo, 'gitlab')
-      })
-      .then((todos) => {
-        if (!stale) {
-          setGitlabTodos(todos as GitLabTodo[])
-        }
-      })
-      .catch(() => {
-        if (!stale) {
-          setGitlabTodos([])
-        }
-      })
-      .finally(() => {
-        if (!stale) {
-          setGitlabTodosLoading(false)
-        }
-      })
-    return () => {
-      stale = true
-    }
-  }, [taskSource, gitlabView, gitlabRefreshNonce, primaryRepo])
-
   const defaultLinearTeamSelection = settings?.defaultLinearTeamSelection
   const [linearTeamSelection, setLinearTeamSelection] = useState<ReadonlySet<string>>(() => {
     if (!defaultLinearTeamSelection) {
       return new Set<string>()
     }
     return new Set(defaultLinearTeamSelection)
+  })
+
+  useTaskPageGitLabFetch({
+    taskSource,
+    gitlabView,
+    activeGitlabFilter,
+    gitlabRefreshNonce,
+    selectedRepos,
+    selectedReposKey,
+    primaryRepo,
+    gitlabIssuePage,
+    setGitlabItems,
+    setGitlabLoading,
+    setGitlabError,
+    setGitlabIssuePage,
+    setGitlabIssueTotalPages,
+    setGitlabIssueLoadingTargetPage,
+    setGitlabTodos,
+    setGitlabTodosLoading
   })
 
   const activeLinearIssues =
@@ -8873,6 +8689,8 @@ export default function TaskPage(): React.JSX.Element {
     hasLinearProjectContext: Boolean(selectedLinearProject),
     hasLinearViewContext: Boolean(selectedLinearCustomView)
   })
+
+
 
   return (
     <div className="relative flex h-full min-h-0 flex-1 overflow-hidden bg-background text-foreground">
