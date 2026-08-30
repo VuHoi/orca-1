@@ -11,7 +11,12 @@ const mocks = vi.hoisted(() => ({
     allowFileUriLinks?: boolean
     onLinkClick?: (...args: unknown[]) => void
   },
-  composerProps: null as null | { structuredTransport?: Record<string, unknown> }
+  composerProps: null as null | {
+    structuredTransport?: Record<string, unknown>
+    launchDraft?: unknown
+    launchDraftResolved?: boolean
+  },
+  launchDraftSignal: { launchDraft: null as unknown, launchDraftResolved: false }
 }))
 
 vi.mock('@/runtime/structured-agent-session-client', () => ({
@@ -97,6 +102,10 @@ vi.mock('./use-native-chat-file-link-click', () => ({
   useNativeChatFileLinkClick: (context: unknown) => (context ? mocks.fileLinkClick : undefined)
 }))
 
+vi.mock('./use-native-chat-launch-draft-adoption', () => ({
+  useNativeChatLaunchDraftSignal: () => mocks.launchDraftSignal
+}))
+
 vi.mock('./NativeChatMessageList', () => ({
   NativeChatMessageList: (props: typeof mocks.messageListProps) => {
     mocks.messageListProps = props
@@ -123,6 +132,7 @@ describe('NativeChatStructuredSession', () => {
     mocks.mode = 'static'
     mocks.messageListProps = null
     mocks.composerProps = null
+    mocks.launchDraftSignal = { launchDraft: null, launchDraftResolved: false }
   })
 
   it('wires local structured file links through the native chat opener', () => {
@@ -166,6 +176,32 @@ describe('NativeChatStructuredSession', () => {
     })
   })
 
+  it('offers a structured launch draft to the native composer', () => {
+    const launchDraft = {
+      tabId: 'structured-tab-1',
+      agent: 'codex',
+      text: 'Review this first',
+      createdAt: 1
+    }
+    mocks.launchDraftSignal = { launchDraft, launchDraftResolved: false }
+
+    render(
+      <NativeChatStructuredSession
+        isVisible
+        tabId="structured-tab-1"
+        sessionId="session-1"
+        target={{ kind: 'local' }}
+        agent="codex"
+        allowFileUriLinks
+      />
+    )
+
+    expect(mocks.composerProps).toMatchObject({
+      launchDraft,
+      launchDraftResolved: false
+    })
+  })
+
   it('retries an unconfirmed transport send and clears the delivery notice', async () => {
     mocks.mode = 'outbox'
     mocks.call.mockRejectedValueOnce(new Error('socket closed')).mockResolvedValueOnce({
@@ -190,9 +226,9 @@ describe('NativeChatStructuredSession', () => {
     )
 
     const send = mocks.composerProps?.structuredTransport?.send as
-      | ((text: string, attachments: readonly { id: string; path: string }[]) => boolean)
+      | ((text: string, attachments: readonly { id: string; path: string }[]) => Promise<boolean>)
       | undefined
-    expect(send?.('hello', [])).toBe(true)
+    await expect(send?.('hello', [])).resolves.toBe(true)
     await waitFor(() => expect(mocks.call).toHaveBeenCalledOnce())
     await waitFor(() => expect(screen.getByText('Message delivery is unconfirmed.')).toBeTruthy())
 
